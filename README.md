@@ -1,36 +1,106 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# ShuttleUNN Frontend
 
-## Getting Started
+A comprehensive campus shuttle payment and tracking system for the University of Nigeria, Nsukka (UNN), featuring NFC card payments, wallet management, and real-time session tracking.
 
-First, run the development server:
+## 🚀 Features
 
+### Student Features
+- User Authentication: Register, login, and profile management
+- Wallet Management: View balance, top-up via Paystack
+- NFC Card Request: Request and manage NFC cards for tap payments
+- Session Booking: Book shuttle sessions with different time plans
+- Session History: View all past, active, and upcoming sessions
+- Refund Requests: Request refunds for unsatisfactory services
+
+### Driver Features
+- Driver Dashboard: View statistics and earnings
+- Tap Payment: Process NFC card payments for students
+- Transaction History: Track all processed payments
+- Weekly Analytics: View passenger counts and trip statistics
+
+### Admin Features
+- System Overview: Monitor total students, drivers, cards, and revenue
+- Card Management: Approve NFC card requests and assign cards
+- Refund Management: Review and approve refund requests
+- User Management: Manage students and drivers
+- Transaction Monitoring: View all system transactions
+
+## 🛠️ Tech Stack
+
+- **Framework**: Next.js 16.0.3 (App Router)
+- **Language**: TypeScript
+- **Styling**: Tailwind CSS
+- **Icons**: Lucide React
+- **HTTP Client**: Axios
+- **Fonts**: Geist Sans & Geist Mono
+
+## 📦 Getting Started
+
+1. Install dependencies:
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+2. Create `.env.local` file:
+```env
+NEXT_PUBLIC_API_URL=http://localhost:5000
+```
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+3. Run the development server:
+```bash
+npm run dev
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+4. Open [http://localhost:3000](http://localhost:3000) in your browser
 
-## Learn More
+## 💳 Payment Plans
 
-To learn more about Next.js, take a look at the following resources:
+- **2hr Plan**: ₦200 (2 hours)
+- **4hr Plan**: ₦400 (4 hours)
+- **Night Plan**: ₦500 (10:00pm - 08:00am) - Most Popular
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## 📁 Project Structure
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```
+frontend/
+├── app/
+│   ├── admin/dashboard/        # Admin dashboard
+│   ├── driver/dashboard/       # Driver dashboard
+│   ├── student/                # Student pages
+│   ├── login/                  # Login page
+│   └── page.tsx                # Home page
+├── components/                 # Reusable components
+├── lib/                        # Utilities and data
+└── public/                     # Static assets
+```
 
-## Deploy on Vercel
+## 🎯 User Roles
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+1. **Student**: Book sessions, manage wallet, request cards
+2. **Driver**: Process payments, view earnings
+3. **Admin**: Manage system, approve requests
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## 🔄 Current Status
+
+✅ All UI pages built with dummy data
+✅ Responsive design (desktop, tablet, mobile)
+✅ Authentication flows
+✅ Dashboard layouts
+✅ Booking system UI
+✅ Payment processing UI
+⏳ Backend integration pending
+⏳ Real payment gateway integration pending
+⏳ NFC card writing/reading pending
+
+## 📝 Next Steps
+
+1. Build backend API with Node.js and MongoDB
+2. Integrate Paystack for payments
+3. Implement NFC card reading/writing
+4. Connect all API endpoints
+5. Add real-time features
+6. Deploy to production
+
+---
+
+Built with ❤️ for University of Nigeria, Nsukka
