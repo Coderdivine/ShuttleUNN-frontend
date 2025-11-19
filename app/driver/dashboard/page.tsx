@@ -24,7 +24,7 @@ const paymentMethodIcons = {
 function DriverDashboardContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { user, userType, trips: appTrips, isLoading, error, getTrips, clearError, logout, updateProfile } = useAppState();
+  const { user, userType, trips: appTrips, isLoading, error, getTrips, clearError, logout, updateProfile, loadUserData } = useAppState();
   const { notification, showNotification, clearNotification } = useNotification();
   const [showSidebar, setShowSidebar] = useState(false);
   const [selectedTransaction, setSelectedTransaction] = useState<any>(null);
@@ -167,6 +167,27 @@ function DriverDashboardContent() {
 
   const handleProfileSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // Validate bank details if provided
+    const hasBankDetails = profileFormData.bankDetails.accountNumber || 
+                           profileFormData.bankDetails.accountName ||
+                           profileFormData.bankDetails.bankCode;
+    
+    if (hasBankDetails) {
+      if (!profileFormData.bankDetails.accountNumber || profileFormData.bankDetails.accountNumber.length !== 10) {
+        showNotification('error', 'Please enter a valid 10-digit account number');
+        return;
+      }
+      if (!profileFormData.bankDetails.bankCode) {
+        showNotification('error', 'Please select a bank');
+        return;
+      }
+      if (!accountVerified) {
+        showNotification('error', 'Please verify your account number first');
+        return;
+      }
+    }
+    
     try {
       setIsSubmittingProfile(true);
       await updateProfile({
@@ -174,8 +195,17 @@ function DriverDashboardContent() {
         lastName: profileFormData.lastName,
         username: profileFormData.username,
         phone: profileFormData.phone,
-        bankDetails: profileFormData.bankDetails,
+        bankDetails: {
+          accountName: profileFormData.bankDetails.accountName || undefined,
+          accountNumber: profileFormData.bankDetails.accountNumber || undefined,
+          bankName: profileFormData.bankDetails.bankName || undefined,
+          bankCode: profileFormData.bankDetails.bankCode || undefined,
+        },
       });
+      
+      // Reload user data to get updated bank details
+      await loadUserData();
+      
       showNotification('success', 'Profile updated successfully!');
       setIsSubmittingProfile(false);
       setShowProfileModal(false);
@@ -264,20 +294,21 @@ function DriverDashboardContent() {
           </button>
         </nav>
 
-        <div className="p-4 border-t border-gray-200">
+        <button 
+          onClick={() => setShowProfileModal(true)}
+          className="p-4 border-t border-gray-200 w-full hover:bg-gray-50 transition-colors"
+        >
           <div className="flex items-center gap-3">
             <div className="h-10 w-10 rounded-full bg-gray-800 text-white flex items-center justify-center font-bold text-sm">
               {driverInitials}
             </div>
-            <div className="flex-1">
+            <div className="flex-1 text-left">
               <p className="text-sm font-medium">{driverName}</p>
               <p className="text-xs text-gray-500">{busNumber}</p>
             </div>
-            <button className="p-1 hover:bg-gray-100 rounded">
-              <Ellipsis size={18} className="text-gray-400" />
-            </button>
+            <Ellipsis size={18} className="text-gray-400" />
           </div>
-        </div>
+        </button>
       </aside>
 
       {/* Mobile Sidebar */}
@@ -318,17 +349,24 @@ function DriverDashboardContent() {
               </button>
             </nav>
 
-            <div className="p-4 border-t border-gray-200">
+            <button 
+              onClick={() => {
+                setShowSidebar(false);
+                setShowProfileModal(true);
+              }}
+              className="p-4 border-t border-gray-200 w-full hover:bg-gray-50 transition-colors"
+            >
               <div className="flex items-center gap-3">
                 <div className="h-10 w-10 rounded-full bg-gray-800 text-white flex items-center justify-center font-bold text-sm">
                   {driverInitials}
                 </div>
-                <div>
+                <div className="flex-1 text-left">
                   <p className="text-sm font-medium">{driverName}</p>
                   <p className="text-xs text-gray-500">{busNumber}</p>
                 </div>
+                <Ellipsis size={18} className="text-gray-400" />
               </div>
-            </div>
+            </button>
           </aside>
         </div>
       )}

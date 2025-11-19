@@ -309,6 +309,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           rating: profile.rating,
           licenseNumber: profile.licenseNumber,
           vehicleInfo: profile.vehicleInfo,
+          bankDetails: profile.bankDetails,
         };
         setUser(appUser);
         localStorage.setItem('appUser', JSON.stringify(appUser));
@@ -336,6 +337,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
             email: response.email,
             phone: response.phone,
             username: response.username,
+            bankDetails: response.bankDetails,
           };
           setUser(updated);
           localStorage.setItem('appUser', JSON.stringify(updated));
@@ -348,6 +350,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
             email: response.email,
             phone: response.phone,
             username: response.username,
+            bankDetails: response.bankDetails,
           };
           setUser(updated);
           localStorage.setItem('appUser', JSON.stringify(updated));
@@ -416,12 +419,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const verifyPayment = useCallback(
     async (reference: string): Promise<{ success: boolean; message: string; newBalance?: number }> => {
-      if (!user?.id || userType !== 'student') {
+      // Wait for user and userType to be loaded
+      if (!user?.id) {
+        console.error('Payment verification failed: No user ID found');
+        return { success: false, message: 'Session expired. Please log in again to complete payment verification.' };
+      }
+      
+      if (userType !== 'student') {
+        console.error('Payment verification failed: User is not a student, userType:', userType);
         return { success: false, message: 'Only students can verify payments' };
       }
 
       try {
         setIsLoading(true);
+        console.log('Verifying payment for user:', user.id, 'reference:', reference);
         const result = await studentService.verifyPayment(reference);
 
         // Update user wallet balance
@@ -439,6 +450,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           newBalance: result.wallet.walletBalance,
         };
       } catch (err: any) {
+        console.error('Payment verification error:', err);
         const errorMsg = err.response?.data?.message || 'Payment verification failed';
         setError(errorMsg);
         setIsLoading(false);

@@ -17,31 +17,34 @@ const paymentMethods = [
 function WalletContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { user, updateWallet, verifyPayment, isLoading, error, clearError } = useAppState();
+  const { user, updateWallet, verifyPayment, isLoading, error, clearError, loadUserData } = useAppState();
   const { notification, showNotification, clearNotification } = useNotification();
   const [selectedAmount, setSelectedAmount] = useState<number | null>(null);
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<string>('card');
   const [isProcessing, setIsProcessing] = useState(false);
   const [customAmount, setCustomAmount] = useState('');
   const [isVerifying, setIsVerifying] = useState(false);
+  const [hasAttemptedVerification, setHasAttemptedVerification] = useState(false);
 
   // Check for payment reference in URL (callback from Paystack)
   useEffect(() => {
     const reference = searchParams.get('reference');
-    if (reference && !isVerifying) {
+    // Wait for user to load, then verify payment (only once)
+    if (reference && user?.id && !isVerifying && !hasAttemptedVerification) {
       setIsVerifying(true);
+      setHasAttemptedVerification(true);
       handlePaymentVerification(reference);
     }
-  }, [searchParams]);
+  }, [searchParams, user?.id, isVerifying, hasAttemptedVerification]);
 
   const handlePaymentVerification = async (reference: string) => {
     try {
       const result = await verifyPayment(reference);
       if (result.success) {
-        showNotification('success', result.message);
+        showNotification('success', `Payment verified successfully! ${result.newBalance ? `New balance: ${formatCurrency(result.newBalance)}` : ''}`);
         setTimeout(() => {
           router.push('/student/dashboard');
-        }, 2000);
+        }, 3000);
       } else {
         showNotification('error', result.message);
         setIsVerifying(false);
@@ -103,6 +106,19 @@ function WalletContent() {
   };
 
   const newBalance = (user?.walletBalance || 0) + (selectedAmount || 0);
+
+  // Show loading screen when verifying payment
+  if (isVerifying) {
+    return (
+      <div className="min-h-screen bg-white flex items-center justify-center">
+        <div className="text-center">
+          <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-black border-r-transparent mb-4"></div>
+          <p className="text-gray-600">Verifying your payment...</p>
+          <p className="text-xs text-gray-500 mt-2">Please wait</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-white">

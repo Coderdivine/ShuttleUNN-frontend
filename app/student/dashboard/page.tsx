@@ -18,7 +18,7 @@ type TabType = 'all' | 'upcoming' | 'active' | 'past';
 
 export default function StudentDashboard() {
   const router = useRouter();
-  const { user, stats, transactions, getTransactionHistory, updateProfile, isLoading, error, logout, clearError } = useAppState();
+  const { user, stats, transactions, getTransactionHistory, updateProfile, loadUserData, isLoading, error, logout, clearError } = useAppState();
   const { notification, showNotification, clearNotification } = useNotification();
   const [activeTab, setActiveTab] = useState<TabType>('active');
   const [showSidebar, setShowSidebar] = useState(false);
@@ -179,6 +179,27 @@ export default function StudentDashboard() {
 
   const handleProfileSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // Validate bank details if provided
+    const hasBankDetails = profileFormData.bankDetails.accountNumber || 
+                           profileFormData.bankDetails.accountName ||
+                           profileFormData.bankDetails.bankCode;
+    
+    if (hasBankDetails) {
+      if (!profileFormData.bankDetails.accountNumber || profileFormData.bankDetails.accountNumber.length !== 10) {
+        showNotification('error', 'Please enter a valid 10-digit account number');
+        return;
+      }
+      if (!profileFormData.bankDetails.bankCode) {
+        showNotification('error', 'Please select a bank');
+        return;
+      }
+      if (!accountVerified) {
+        showNotification('error', 'Please verify your account number first');
+        return;
+      }
+    }
+    
     try {
       setIsSubmittingProfile(true);
       await updateProfile({
@@ -187,8 +208,17 @@ export default function StudentDashboard() {
         username: profileFormData.username,
         phone: profileFormData.phone,
         regNumber: profileFormData.regNumber,
-        bankDetails: profileFormData.bankDetails,
+        bankDetails: {
+          accountName: profileFormData.bankDetails.accountName || undefined,
+          accountNumber: profileFormData.bankDetails.accountNumber || undefined,
+          bankName: profileFormData.bankDetails.bankName || undefined,
+          bankCode: profileFormData.bankDetails.bankCode || undefined,
+        },
       });
+      
+      // Reload user data to get updated bank details
+      await loadUserData();
+      
       showNotification('success', 'Profile updated successfully!');
       setIsSubmittingProfile(false);
       setShowProfileModal(false);

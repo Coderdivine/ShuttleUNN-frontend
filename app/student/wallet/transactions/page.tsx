@@ -3,7 +3,8 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { ChevronLeft, CheckCircle, Clock, XCircle, RefreshCw, Receipt, Wallet } from 'lucide-react';
+import { ArrowLeft, CheckCircle, Clock, XCircle, RefreshCw, Receipt, Calendar, CreditCard } from 'lucide-react';
+import Logo from '@/components/Logo';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import { useAppState } from '@/lib/AppContext';
 import studentService from '@/lib/api/studentService';
@@ -75,7 +76,7 @@ function TopupDetailModal({ isOpen, onClose, transaction, onVerify, isVerifying 
           </div>
 
           {/* Amount */}
-          <div className="bg-gradient-to-br from-black to-gray-800 text-white rounded-2xl p-6 text-center">
+          <div className="bg-linear-to-br from-black to-gray-800 text-white rounded-2xl p-6 text-center">
             <p className="text-sm text-gray-300 mb-2">Amount</p>
             <p className="text-3xl font-bold">{formatCurrency(transaction.amount)}</p>
           </div>
@@ -222,72 +223,177 @@ export default function WalletTransactionsPage() {
     );
   }
 
+  // Calculate stats
+  const totalTopups = transactions.length;
+  const totalAmount = transactions
+    .filter(t => t.status === 'completed')
+    .reduce((sum, t) => sum + t.amount, 0);
+  const successfulTopups = transactions.filter(t => t.status === 'completed').length;
+  const failedTopups = transactions.filter(t => t.status === 'failed').length;
+  const pendingTopups = transactions.filter(t => t.status === 'pending').length;
+
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-white">
       {/* Header */}
-      <div className="bg-white border-b border-gray-200 sticky top-0 z-40">
-        <div className="max-w-2xl mx-auto px-4 py-4 flex items-center gap-4">
-          <button
-            onClick={() => router.back()}
-            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-          >
-            <ChevronLeft size={20} />
-          </button>
-          <div className="flex-1">
-            <h1 className="text-lg font-bold">Top-up History</h1>
-            <p className="text-xs text-gray-600">View all wallet top-up transactions</p>
-          </div>
-          <Wallet size={24} className="text-gray-400" />
+      <header className="border-b border-gray-200 sticky top-0 z-10 bg-white">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex items-center justify-between">
+          <Link href="/student/dashboard" className="p-1 hover:bg-gray-100 rounded-lg transition-colors">
+            <ArrowLeft size={20} />
+          </Link>
+          <Logo className="h-6" />
+          <Link href="/student/wallet">
+            <button className="text-xs font-medium text-black hover:underline flex items-center gap-1">
+              Top Up →
+            </button>
+          </Link>
         </div>
-      </div>
+      </header>
 
       {/* Content */}
-      <div className="max-w-2xl mx-auto p-4">
+      <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12">
+        {/* Hero Section */}
+        <div className="mb-12">
+          <h1 className="text-3xl sm:text-4xl font-light mb-2">
+            Transaction History
+          </h1>
+          <p className="text-gray-600 text-sm">
+            View all your wallet top-up transactions
+          </p>
+        </div>
+
         {isLoading ? (
-          <div className="flex items-center justify-center py-12">
-            <RefreshCw size={24} className="animate-spin text-gray-400" />
+          <div className="flex items-center justify-center py-20">
+            <RefreshCw size={32} className="animate-spin text-gray-400" />
           </div>
         ) : transactions.length === 0 ? (
-          <div className="bg-white rounded-2xl border border-gray-200 p-12 text-center">
+          <div className="bg-gray-50 rounded-2xl border border-gray-200 p-12 sm:p-20 text-center">
             <Receipt size={48} className="text-gray-300 mx-auto mb-4" />
-            <h2 className="text-xl font-bold mb-2">No Top-up History</h2>
-            <p className="text-sm text-gray-600 mb-6">You haven't made any wallet top-ups yet.</p>
+            <h2 className="text-2xl font-light mb-2">No Transactions Yet</h2>
+            <p className="text-gray-600 text-sm mb-8 max-w-md mx-auto">
+              Your wallet top-up history will appear here. Start by adding funds to your wallet.
+            </p>
             <Link href="/student/wallet">
-              <Button variant="primary">Top Up Wallet</Button>
+              <button className="bg-black text-white px-8 py-3 rounded-xl font-medium text-sm hover:bg-gray-800 transition-all active:scale-95">
+                Top Up Wallet
+              </button>
             </Link>
           </div>
         ) : (
-          <div className="space-y-3">
-            {transactions.map((transaction) => {
-              const StatusIcon = statusIcons[transaction.status];
+          <div className="space-y-8">
+            {/* Stats Overview - Simplified */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="bg-black text-white rounded-2xl p-6">
+                <p className="text-xs text-gray-300 uppercase tracking-wider mb-2">Total Topped Up</p>
+                <p className="text-3xl sm:text-4xl font-light">{formatCurrency(totalAmount)}</p>
+              </div>
               
-              return (
-                <div
-                  key={transaction.transaction_id}
-                  onClick={() => handleTransactionClick(transaction)}
-                  className="bg-white rounded-xl border border-gray-200 p-4 hover:shadow-md transition-all cursor-pointer active:scale-[0.98]"
-                >
-                  <div className="flex items-start justify-between mb-3">
-                    <div className="flex-1">
-                      <p className="font-semibold text-lg">{formatCurrency(transaction.amount)}</p>
-                      <p className="text-xs text-gray-600">{formatDate(transaction.createdAt)}</p>
+              <div className="bg-gray-100 rounded-2xl p-6">
+                <p className="text-xs text-gray-600 uppercase tracking-wider mb-2">Successful</p>
+                <p className="text-3xl sm:text-4xl font-light text-green-600">{successfulTopups}</p>
+              </div>
+              
+              <div className="bg-gray-100 rounded-2xl p-6">
+                <p className="text-xs text-gray-600 uppercase tracking-wider mb-2">Total Attempts</p>
+                <p className="text-3xl sm:text-4xl font-light">{totalTopups}</p>
+              </div>
+            </div>
+
+            {/* Desktop Table */}
+            <div className="hidden lg:block">
+              <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden">
+                <table className="w-full">
+                  <thead className="bg-gray-50 border-b border-gray-200">
+                    <tr>
+                      <th className="text-left px-6 py-4 text-xs font-medium text-gray-600 uppercase tracking-wider">Date</th>
+                      <th className="text-left px-6 py-4 text-xs font-medium text-gray-600 uppercase tracking-wider">Reference</th>
+                      <th className="text-left px-6 py-4 text-xs font-medium text-gray-600 uppercase tracking-wider">Method</th>
+                      <th className="text-right px-6 py-4 text-xs font-medium text-gray-600 uppercase tracking-wider">Amount</th>
+                      <th className="text-center px-6 py-4 text-xs font-medium text-gray-600 uppercase tracking-wider">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {transactions.map((transaction) => {
+                      const StatusIcon = statusIcons[transaction.status];
+                      
+                      return (
+                        <tr
+                          key={transaction.transaction_id}
+                          onClick={() => handleTransactionClick(transaction)}
+                          className="hover:bg-gray-50 transition-colors cursor-pointer"
+                        >
+                          <td className="px-6 py-4">
+                            <div className="flex items-center gap-2">
+                              <Calendar size={14} className="text-gray-400" />
+                              <span className="text-sm">{formatDate(transaction.createdAt)}</span>
+                            </div>
+                          </td>
+                          <td className="px-6 py-4">
+                            <span className="text-xs font-mono text-gray-600">{transaction.reference.slice(0, 16)}...</span>
+                          </td>
+                          <td className="px-6 py-4">
+                            <div className="flex items-center gap-2">
+                              <CreditCard size={14} className="text-gray-400" />
+                              <span className="text-sm capitalize">{transaction.paymentMethod}</span>
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 text-right">
+                            <span className="text-sm font-semibold">{formatCurrency(transaction.amount)}</span>
+                          </td>
+                          <td className="px-6 py-4">
+                            <div className="flex justify-center">
+                              <span className={`px-3 py-1 rounded-full text-xs font-medium border inline-flex items-center gap-1 ${statusColors[transaction.status]}`}>
+                                <StatusIcon size={12} />
+                                {transaction.status}
+                              </span>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Mobile Cards */}
+            <div className="lg:hidden space-y-3">
+              {transactions.map((transaction) => {
+                const StatusIcon = statusIcons[transaction.status];
+                
+                return (
+                  <div
+                    key={transaction.transaction_id}
+                    onClick={() => handleTransactionClick(transaction)}
+                    className="bg-white border border-gray-200 rounded-xl p-4 active:scale-[0.98] transition-transform"
+                  >
+                    <div className="flex items-start justify-between mb-3">
+                      <div>
+                        <p className="text-xl font-semibold mb-1">{formatCurrency(transaction.amount)}</p>
+                        <p className="text-xs text-gray-500 flex items-center gap-1">
+                          <Calendar size={12} />
+                          {formatDate(transaction.createdAt)}
+                        </p>
+                      </div>
+                      <div className={`px-3 py-1.5 rounded-full text-xs font-medium border inline-flex items-center gap-1 ${statusColors[transaction.status]}`}>
+                        <StatusIcon size={12} />
+                        {transaction.status}
+                      </div>
                     </div>
-                    <div className={`px-3 py-1 rounded-full text-xs font-medium border flex items-center gap-1 ${statusColors[transaction.status]}`}>
-                      <StatusIcon size={12} />
-                      {transaction.status}
+                    
+                    <div className="flex items-center justify-between pt-3 border-t border-gray-100">
+                      <div className="flex items-center gap-2">
+                        <CreditCard size={14} className="text-gray-400" />
+                        <span className="text-xs font-medium capitalize">{transaction.paymentMethod}</span>
+                      </div>
+                      <span className="text-xs font-mono text-gray-400">{transaction.reference.slice(0, 12)}...</span>
                     </div>
                   </div>
-                  
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="text-gray-500">Ref: {transaction.reference}</span>
-                    <span className="font-medium capitalize">{transaction.paymentMethod}</span>
-                  </div>
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
           </div>
         )}
-      </div>
+      </main>
 
       {/* Detail Modal */}
       <TopupDetailModal
