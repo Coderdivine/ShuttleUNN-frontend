@@ -38,6 +38,7 @@ export interface AppStats {
   activeCard?: string;
   lastRide?: string;
   totalEarnings?: number; // Driver only
+  completedTrips?: number; // Driver only
 }
 
 interface AppContextType {
@@ -299,6 +300,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
         // Load transactions
         const transactionData = await studentService.getTransactionHistory(user.id, 20, 0);
         setTransactions(transactionData.transactions);
+        
+        // Update stats - calculate from transactions
+        const totalSpent = transactionData.transactions
+          .filter((t: any) => t.type === 'debit')
+          .reduce((sum: number, t: any) => sum + t.amount, 0);
+        
+        setStats({
+          totalTrips: 0, // Will be updated when trips are loaded
+          totalSpent,
+          activeCard: profile.nfcCardId || undefined,
+        });
       } else {
         const profile = await driverService.getProfile(user.id);
         const appUser: AppUser = {
@@ -316,6 +328,25 @@ export function AppProvider({ children }: { children: ReactNode }) {
         };
         setUser(appUser);
         localStorage.setItem('appUser', JSON.stringify(appUser));
+
+        // Fetch driver stats from backend
+        try {
+          const driverStats = await driverService.getStats(user.id);
+          setStats({
+            totalTrips: driverStats.totalTrips || 0,
+            totalSpent: 0,
+            totalEarnings: driverStats.totalEarnings || 0,
+            completedTrips: driverStats.completedTrips || 0,
+          });
+        } catch (statsErr) {
+          console.warn('Failed to load driver stats:', statsErr);
+          setStats({
+            totalTrips: 0,
+            totalSpent: 0,
+            totalEarnings: 0,
+            completedTrips: 0,
+          });
+        }
       }
       setIsLoading(false);
     } catch (err: any) {
@@ -353,6 +384,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
             email: response.email,
             phone: response.phone,
             username: response.username,
+            vehicleInfo: response.vehicleInfo || user.vehicleInfo,
             bankDetails: response.bankDetails,
           };
           setUser(updated);
@@ -503,12 +535,39 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const getTrips = useCallback(
     async (limit: number = 10, skip: number = 0, status?: string) => {
-      if (!user?.id || userType !== 'student') throw new Error('Only students can view trips');
+      if (!user?.id) throw new Error('User not logged in');
 
       try {
         setIsLoading(true);
-        const data = await bookingService.getStudentTrips(user.id, status, limit, skip);
-        setTrips(data.trips);
+
+        if (userType === 'student') {
+          // Students view their own trips
+          const data = await bookingService.getStudentTrips(user.id, status, limit, skip);
+          setTrips(data.trips);
+        } else if (userType === 'driver') {
+          // Drivers view trips for their assigned shuttle
+          try {
+            // First, get all shuttles and find the one assigned to this driver
+            const shuttlesData = await shuttleService.getAllShuttles(100, 0);
+            const driverShuttle = shuttlesData.shuttles.find(
+              (shuttle: any) => shuttle.assignedDriver === user.id
+            );
+
+            if (driverShuttle) {
+              // Get bookings for this shuttle
+              const data = await bookingService.getShuttleBookings(driverShuttle.shuttle_id, limit, skip);
+              setTrips(data.bookings);
+            } else {
+              // Driver has no assigned shuttle yet
+              setTrips([]);
+            }
+          } catch (shuttleErr) {
+            // If shuttle service fails (e.g., no shuttles in database), just set empty trips
+            console.warn('Failed to load shuttles:', shuttleErr);
+            setTrips([]);
+          }
+        }
+
         setIsLoading(false);
       } catch (err: any) {
         const errorMsg = err.response?.data?.message || 'Failed to load trips';

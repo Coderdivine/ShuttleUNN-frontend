@@ -13,6 +13,7 @@ import Button from '@/components/Button';
 import { useAppState } from '@/lib/AppContext';
 import { Notification, useNotification } from '@/components/Notification';
 import paymentService, { Bank } from '@/lib/api/paymentService';
+import routeService, { RouteResponse } from '@/lib/api/routeService';
 
 const paymentMethodIcons = {
   card: Wallet,
@@ -24,7 +25,7 @@ const paymentMethodIcons = {
 function DriverDashboardContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { user, userType, trips: appTrips, isLoading, error, isHydrated, getTrips, clearError, logout, updateProfile, loadUserData } = useAppState();
+  const { user, userType, trips: appTrips, stats, isLoading, error, isHydrated, getTrips, clearError, logout, updateProfile, loadUserData } = useAppState();
   const { notification, showNotification, clearNotification } = useNotification();
   const [showSidebar, setShowSidebar] = useState(false);
   const [selectedTransaction, setSelectedTransaction] = useState<any>(null);
@@ -36,6 +37,8 @@ function DriverDashboardContent() {
     firstName: '',
     lastName: '',
     phone: '',
+    plateNumber: '',
+    assignedRoute: '',
     bankDetails: {
       accountName: '',
       accountNumber: '',
@@ -47,6 +50,8 @@ function DriverDashboardContent() {
   const [loadingBanks, setLoadingBanks] = useState(false);
   const [verifyingAccount, setVerifyingAccount] = useState(false);
   const [accountVerified, setAccountVerified] = useState(false);
+  const [routes, setRoutes] = useState<RouteResponse[]>([]);
+  const [loadingRoutes, setLoadingRoutes] = useState(false);
 
   // Check for editProfile query param
   useEffect(() => {
@@ -64,6 +69,8 @@ function DriverDashboardContent() {
         firstName: user.firstName || '',
         lastName: user.lastName || '',
         phone: user.phone || '',
+        plateNumber: (user.vehicleInfo as any)?.plateNumber || '',
+        assignedRoute: (user.vehicleInfo as any)?.assignedRoute || '',
         bankDetails: {
           accountName: user.bankDetails?.accountName || '',
           accountNumber: user.bankDetails?.accountNumber || '',
@@ -84,6 +91,9 @@ function DriverDashboardContent() {
     if (showProfileModal && banks.length === 0) {
       loadBanks();
     }
+    if (showProfileModal && routes.length === 0) {
+      loadRoutes();
+    }
   }, [showProfileModal]);
 
   const loadBanks = async () => {
@@ -95,6 +105,18 @@ function DriverDashboardContent() {
       showNotification('error', error.message || 'Failed to load banks');
     } finally {
       setLoadingBanks(false);
+    }
+  };
+
+  const loadRoutes = async () => {
+    try {
+      setLoadingRoutes(true);
+      const routesData = await routeService.getAllRoutes(100, 0);
+      setRoutes(routesData.routes);
+    } catch (error: any) {
+      showNotification('error', error.message || 'Failed to load routes');
+    } finally {
+      setLoadingRoutes(false);
     }
   };
 
@@ -195,6 +217,10 @@ function DriverDashboardContent() {
         lastName: profileFormData.lastName,
         username: profileFormData.username,
         phone: profileFormData.phone,
+        vehicleInfo: {
+          plateNumber: profileFormData.plateNumber || undefined,
+          assignedRoute: profileFormData.assignedRoute || undefined,
+        },
         bankDetails: {
           accountName: profileFormData.bankDetails.accountName || undefined,
           accountNumber: profileFormData.bankDetails.accountNumber || undefined,
@@ -251,6 +277,11 @@ function DriverDashboardContent() {
 
   const weeklyEarnings = weeklyTrips.reduce((sum, trip) => sum + (trip.fare || 0), 0);
   const weeklyPassengers = weeklyTrips.length;
+
+  // Use stats from backend for total earnings and trips
+  const totalEarnings = stats?.totalEarnings || 0;
+  const totalTrips = stats?.totalTrips || 0;
+  const completedTrips = stats?.completedTrips || 0;
 
   // Get driver info
   const driverName = user?.firstName && user?.lastName 
@@ -410,28 +441,28 @@ function DriverDashboardContent() {
             <div className="bg-black text-white rounded-xl p-3 sm:p-4">
               <div className="flex items-center gap-2 mb-2">
                 <DollarSign size={14} />
-                <p className="text-xs font-light opacity-90">Today's Earnings</p>
+                <p className="text-xs font-light opacity-90">Total Earnings</p>
               </div>
-              <p className="text-xl sm:text-2xl font-bold">{formatCurrency(todayEarnings)}</p>
-              <p className="text-xs opacity-75 mt-1">{todayTrips.length} trips</p>
+              <p className="text-xl sm:text-2xl font-bold">{formatCurrency(totalEarnings)}</p>
+              <p className="text-xs opacity-75 mt-1">{completedTrips} completed</p>
             </div>
 
             <div className="bg-white rounded-xl p-3 sm:p-4 border border-gray-200">
               <div className="flex items-center gap-2 mb-2">
                 <Users size={14} className="text-gray-600" />
-                <p className="text-xs font-light text-gray-600">Weekly Passengers</p>
+                <p className="text-xs font-light text-gray-600">Total Trips</p>
               </div>
-              <p className="text-xl sm:text-2xl font-bold">{weeklyPassengers}</p>
-              <p className="text-xs text-gray-500 mt-1">{weeklyTrips.length} trips</p>
+              <p className="text-xl sm:text-2xl font-bold">{totalTrips}</p>
+              <p className="text-xs text-gray-500 mt-1">All time</p>
             </div>
 
             <div className="bg-white rounded-xl p-3 sm:p-4 border border-gray-200">
               <div className="flex items-center gap-2 mb-2">
                 <TrendingUp size={14} className="text-gray-600" />
-                <p className="text-xs font-light text-gray-600">Weekly Earnings</p>
+                <p className="text-xs font-light text-gray-600">Today's Earnings</p>
               </div>
-              <p className="text-xl sm:text-2xl font-bold">{formatCurrency(weeklyEarnings)}</p>
-              <p className="text-xs text-gray-500 mt-1">Last 7 days</p>
+              <p className="text-xl sm:text-2xl font-bold">{formatCurrency(todayEarnings)}</p>
+              <p className="text-xs text-gray-500 mt-1">{todayTrips.length} trips</p>
             </div>
           </div>
 
@@ -678,6 +709,43 @@ function DriverDashboardContent() {
             disabled={isSubmittingProfile || isLoading}
             required
           />
+
+          <div className="pt-4 border-t border-gray-200">
+            <h3 className="font-medium text-gray-900 mb-1">Vehicle Information</h3>
+            <p className="text-xs text-gray-600 mb-4">Update your bus and route details</p>
+            <div className="space-y-4">
+              <Input
+                label="Bus/Vehicle Plate Number"
+                type="text"
+                placeholder="e.g., ABC-1234"
+                value={profileFormData.plateNumber}
+                onChange={(e) => setProfileFormData({ ...profileFormData, plateNumber: e.target.value })}
+                disabled={isSubmittingProfile || isLoading}
+              />
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Assigned Route
+                </label>
+                <select
+                  value={profileFormData.assignedRoute}
+                  onChange={(e) => setProfileFormData({ ...profileFormData, assignedRoute: e.target.value })}
+                  disabled={isSubmittingProfile || isLoading || loadingRoutes}
+                  className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <option value="">Select a route</option>
+                  {routes.map((route) => (
+                    <option key={route.route_id} value={route.routeName}>
+                      {route.routeName} ({route.routeCode})
+                    </option>
+                  ))}
+                </select>
+                {loadingRoutes && (
+                  <p className="text-xs text-gray-500 mt-1">Loading routes...</p>
+                )}
+              </div>
+            </div>
+          </div>
 
           <div className="pt-4 border-t border-gray-200">
             <h3 className="font-medium text-gray-900 mb-1">Bank Details for Tap to Pay</h3>

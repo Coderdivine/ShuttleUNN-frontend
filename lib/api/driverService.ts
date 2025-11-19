@@ -152,6 +152,23 @@ class DriverService {
     const response = await api.post<{ data: any }>(`/v2/driver/generate-qr/${driver_id}`, { fare, route });
     return response.data.data;
   }
+
+  async getStats(driverId: string) {
+    const response = await api.get<{
+      data: {
+        driver_id: string;
+        totalEarnings: number;
+        totalTrips: number;
+        completedTrips: number;
+        rating: number;
+        ratingCount: number;
+        status: string;
+        vehicleInfo: any;
+        assignedRoutes: any[];
+      };
+    }>(`/v2/driver/stats/${driverId}`);
+    return response.data.data;
+  }
 }
 
 export default new DriverService();
