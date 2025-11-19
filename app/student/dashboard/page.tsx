@@ -18,7 +18,7 @@ type TabType = 'all' | 'upcoming' | 'active' | 'past';
 
 export default function StudentDashboard() {
   const router = useRouter();
-  const { user, stats, transactions, getTransactionHistory, updateProfile, loadUserData, isLoading, error, logout, clearError } = useAppState();
+  const { user, stats, transactions, getTransactionHistory, updateProfile, loadUserData, isLoading, error, logout, clearError, isHydrated, userType } = useAppState();
   const { notification, showNotification, clearNotification } = useNotification();
   const [activeTab, setActiveTab] = useState<TabType>('active');
   const [showSidebar, setShowSidebar] = useState(false);
@@ -46,6 +46,13 @@ export default function StudentDashboard() {
   const [loadingBanks, setLoadingBanks] = useState(false);
   const [verifyingAccount, setVerifyingAccount] = useState(false);
   const [accountVerified, setAccountVerified] = useState(false);
+  
+  // Redirect if not a student (wait for hydration to complete)
+  useEffect(() => {
+    if (isHydrated && userType !== 'student') {
+      router.push('/');
+    }
+  }, [userType, router, isHydrated]);
   
   // Load transactions on mount
   useEffect(() => {
@@ -243,6 +250,18 @@ export default function StudentDashboard() {
     if (activeTab === 'upcoming') return false;
     return true;
   });
+
+  // Show loading screen while hydrating
+  if (!isHydrated) {
+    return (
+      <div className="min-h-screen bg-white flex items-center justify-center">
+        <div className="text-center">
+          <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-black border-r-transparent mb-4"></div>
+          <p className="text-gray-600">Loading...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 flex">

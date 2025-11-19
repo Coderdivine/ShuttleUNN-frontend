@@ -47,6 +47,7 @@ interface AppContextType {
   isAuthenticated: boolean;
   isLoading: boolean;
   error: string | null;
+  isHydrated: boolean;
 
   // Stats and data
   stats: AppStats | null;
@@ -92,6 +93,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [trips, setTrips] = useState<BookingResponse[]>([]);
   const [routes, setRoutes] = useState<RouteResponse[]>([]);
   const [shuttles, setShuttles] = useState<ShuttleResponse[]>([]);
+  const [isHydrated, setIsHydrated] = useState(false);
 
   // Load from localStorage on mount
   useEffect(() => {
@@ -128,6 +130,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       console.log('Hydration skipped - missing data');
       setIsAuthenticated(false);
     }
+    setIsHydrated(true);
     console.log('=== END HYDRATION DEBUG ===');
   }, []);
 
@@ -659,6 +662,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         isAuthenticated,
         isLoading,
         error,
+        isHydrated,
         stats,
         transactions,
         bookings,

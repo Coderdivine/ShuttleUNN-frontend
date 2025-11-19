@@ -17,7 +17,7 @@ const paymentMethods = [
 function WalletContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { user, updateWallet, verifyPayment, isLoading, error, clearError, loadUserData } = useAppState();
+  const { user, updateWallet, verifyPayment, isLoading, error, clearError, loadUserData, isHydrated, userType } = useAppState();
   const { notification, showNotification, clearNotification } = useNotification();
   const [selectedAmount, setSelectedAmount] = useState<number | null>(null);
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<string>('card');
@@ -106,6 +106,18 @@ function WalletContent() {
   };
 
   const newBalance = (user?.walletBalance || 0) + (selectedAmount || 0);
+
+  // Show loading screen when hydrating
+  if (!isHydrated) {
+    return (
+      <div className="min-h-screen bg-white flex items-center justify-center">
+        <div className="text-center">
+          <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-black border-r-transparent mb-4"></div>
+          <p className="text-gray-600">Loading...</p>
+        </div>
+      </div>
+    );
+  }
 
   // Show loading screen when verifying payment
   if (isVerifying) {

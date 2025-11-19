@@ -12,7 +12,7 @@ import QRCode from 'react-qr-code';
 import driverService from '@/lib/api/driverService';
 
 export default function TapPaymentPage() {
-  const { user } = useAppState();
+  const { user, isHydrated, userType } = useAppState();
   const { notification, showNotification, clearNotification } = useNotification();
   const [paymentMethod, setPaymentMethod] = useState<'qrcode' | 'transfer'>('qrcode');
   const [copied, setCopied] = useState(false);
@@ -70,12 +70,22 @@ export default function TapPaymentPage() {
         </div>
       </header>
 
-      {/* Main Content */}
-      <main className="max-w-2xl mx-auto px-4 py-8">
-        <div className="mb-6 text-center">
-          <h1 className="text-3xl font-bold mb-2">Payment Collection</h1>
-          <p className="text-gray-600">Choose how you want to receive payment</p>
+      {/* Show loading screen while hydrating */}
+      {!isHydrated ? (
+        <div className="flex items-center justify-center min-h-[60vh]">
+          <div className="text-center">
+            <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-black border-r-transparent mb-4"></div>
+            <p className="text-gray-600">Loading...</p>
+          </div>
         </div>
+      ) : (
+        <>
+          {/* Main Content */}
+          <main className="max-w-2xl mx-auto px-4 py-8">
+            <div className="mb-6 text-center">
+              <h1 className="text-3xl font-bold mb-2">Payment Collection</h1>
+              <p className="text-gray-600">Choose how you want to receive payment</p>
+            </div>
 
         {/* Payment Method Toggle */}
         <div className="bg-white rounded-xl border border-gray-200 p-2 mb-6 flex gap-2">
@@ -284,6 +294,8 @@ export default function TapPaymentPage() {
           </div>
         </div>
       </main>
+        </>
+      )}
 
       {notification && (
         <Notification

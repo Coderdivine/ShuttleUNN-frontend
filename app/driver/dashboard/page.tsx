@@ -24,7 +24,7 @@ const paymentMethodIcons = {
 function DriverDashboardContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { user, userType, trips: appTrips, isLoading, error, getTrips, clearError, logout, updateProfile, loadUserData } = useAppState();
+  const { user, userType, trips: appTrips, isLoading, error, isHydrated, getTrips, clearError, logout, updateProfile, loadUserData } = useAppState();
   const { notification, showNotification, clearNotification } = useNotification();
   const [showSidebar, setShowSidebar] = useState(false);
   const [selectedTransaction, setSelectedTransaction] = useState<any>(null);
@@ -136,12 +136,12 @@ function DriverDashboardContent() {
     }
   };
 
-  // Redirect if not a driver
+  // Redirect if not a driver (wait for hydration to complete)
   useEffect(() => {
-    if (userType !== 'driver') {
+    if (isHydrated && userType !== 'driver') {
       router.push('/');
     }
-  }, [userType, router]);
+  }, [userType, router, isHydrated]);
 
   // Load driver trips on mount
   useEffect(() => {
@@ -261,6 +261,18 @@ function DriverDashboardContent() {
     : 'D';
   const busNumber = (user?.vehicleInfo as any)?.plateNumber || 'N/A';
   const route = (user?.vehicleInfo as any)?.assignedRoute || 'No route assigned';
+
+  // Show loading screen while hydrating
+  if (!isHydrated) {
+    return (
+      <div className="min-h-screen bg-white flex items-center justify-center">
+        <div className="text-center">
+          <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-black border-r-transparent mb-4"></div>
+          <p className="text-gray-600">Loading...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 flex">
