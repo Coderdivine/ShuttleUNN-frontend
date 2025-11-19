@@ -135,13 +135,14 @@ export default function TapPaymentPage() {
                   <div className="animate-spin rounded-full h-12 w-12 border-4 border-gray-300 border-t-black" />
                 </div>
               ) : qrData ? (
-                <div className="bg-white rounded-xl p-6 mb-6 inline-block border-4 border-gray-100">
+                <div className="bg-white rounded-xl p-8 mb-6 inline-block border-4 border-gray-100 shadow-lg">
                   <QRCode
-                    value={JSON.stringify(qrData)}
-                    size={240}
+                    value={`https://shuttle-unn-frontend.vercel.app/student/pay?data=${encodeURIComponent(JSON.stringify(qrData))}`}
+                    size={280}
                     level="H"
                     bgColor="#ffffff"
                     fgColor="#000000"
+                    style={{ height: "auto", maxWidth: "100%", width: "100%" }}
                   />
                 </div>
               ) : (
@@ -151,7 +152,7 @@ export default function TapPaymentPage() {
               )}
 
               <h2 className="text-2xl font-bold mb-2">Scan to Pay</h2>
-              <p className="text-gray-600 mb-4">Student can scan this QR code with their app</p>
+              <p className="text-gray-600 mb-4">Student can scan with app or phone camera</p>
               
               {qrData && (
                 <button

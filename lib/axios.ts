@@ -31,8 +31,19 @@ api.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401) {
+      const userType = localStorage.getItem('userType');
       localStorage.removeItem('shuttleunn-token');
-      window.location.href = '/login';
+      localStorage.removeItem('appUser');
+      localStorage.removeItem('userType');
+      localStorage.removeItem('isAuthenticated');
+      localStorage.removeItem('appStats');
+      
+      // Redirect to appropriate login page based on user type
+      if (userType === 'driver') {
+        window.location.href = '/driver/auth/login';
+      } else {
+        window.location.href = '/student/auth/login';
+      }
     }
     return Promise.reject(error);
   }
