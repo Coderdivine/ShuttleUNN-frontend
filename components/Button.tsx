@@ -29,6 +29,7 @@ export default function Button({
 
   return (
     <button
+      suppressHydrationWarning
       className={`${baseStyles} ${variants[variant]} ${sizes[size]} ${className}`}
       {...props}
     >

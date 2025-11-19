@@ -57,20 +57,36 @@ export default function Home() {
         {mobileMenuOpen && (
           <div className="md:hidden border-t border-gray-200 bg-white">
             <div className="px-4 py-4 space-y-3">
-              <Link href="#features" className="block text-sm font-medium text-gray-700 hover:text-black py-2">
+              <Link 
+                href="#features" 
+                onClick={() => setMobileMenuOpen(false)}
+                className="block text-sm font-medium text-gray-700 hover:text-black py-2"
+              >
                 Features
               </Link>
-              <Link href="#routes" className="block text-sm font-medium text-gray-700 hover:text-black py-2">
+              <Link 
+                href="#routes" 
+                onClick={() => setMobileMenuOpen(false)}
+                className="block text-sm font-medium text-gray-700 hover:text-black py-2"
+              >
                 Routes
               </Link>
-              <Link href="/support" className="block text-sm font-medium text-gray-700 hover:text-black py-2">
+              <Link 
+                href="/support" 
+                onClick={() => setMobileMenuOpen(false)}
+                className="block text-sm font-medium text-gray-700 hover:text-black py-2"
+              >
                 Support
               </Link>
               <div className="pt-3 border-t border-gray-200 space-y-2">
-                <Link href="/student/auth/login" className="block text-sm font-medium text-gray-700 hover:text-black py-2">
+                <Link 
+                  href="/student/auth/login" 
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="block text-sm font-medium text-gray-700 hover:text-black py-2"
+                >
                   Student Login
                 </Link>
-                <Link href="/driver/auth/login">
+                <Link href="/driver/auth/login" onClick={() => setMobileMenuOpen(false)}>
                   <button className="w-full text-sm font-medium text-white bg-black px-4 py-2 rounded-full hover:bg-gray-900 transition-colors">
                     Driver Login
                   </button>

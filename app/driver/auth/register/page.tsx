@@ -8,6 +8,7 @@ import Button from '@/components/Button';
 import Input from '@/components/Input';
 import { Eye, EyeOff, Truck, ArrowRight } from 'lucide-react';
 import { Notification, useNotification } from '@/components/Notification';
+import driverService from '@/lib/api/driverService';
 
 export default function DriverRegisterPage() {
   const router = useRouter();
@@ -21,20 +22,62 @@ export default function DriverRegisterPage() {
     password: '',
     firstName: '',
     lastName: '',
+    username: '',
+    license: '',
     licenseNumber: '',
-    busNumber: '',
-    assignedRoute: '',
+    licenseExpiry: '',
+    vehicleInfo: {
+      registrationNumber: '',
+      make: '',
+      model: '',
+      capacity: 0,
+      color: '',
+    },
   });
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
-    await new Promise((resolve) => setTimeout(resolve, 1500));
-    showNotification('success', 'Driver registration successful! Admin will verify your license.');
-    setTimeout(() => {
+
+    try {
+      // Validate required fields
+      if (!formData.vehicleInfo.registrationNumber || !formData.licenseNumber || !formData.licenseExpiry) {
+        showNotification('error', 'Please fill in all required fields');
+        setIsLoading(false);
+        return;
+      }
+
+      // Call the actual API
+      await driverService.register({
+        firstName: formData.firstName,
+        lastName: formData.lastName,
+        username: formData.username,
+        email: formData.email,
+        password: formData.password,
+        phone: formData.phone,
+        license: formData.license,
+        licenseNumber: formData.licenseNumber,
+        licenseExpiry: formData.licenseExpiry,
+        vehicleInfo: {
+          registrationNumber: formData.vehicleInfo.registrationNumber,
+          make: formData.vehicleInfo.make,
+          model: formData.vehicleInfo.model,
+          capacity: formData.vehicleInfo.capacity || 14,
+          color: formData.vehicleInfo.color,
+        },
+      });
+
+      showNotification('success', 'Driver registration successful! You can now login.');
+      setTimeout(() => {
+        setIsLoading(false);
+        router.push('/driver/auth/login');
+      }, 2000);
+    } catch (error: any) {
+      console.error('Registration error:', error);
+      const errorMsg = error.response?.data?.message || error.message || 'Registration failed';
+      showNotification('error', errorMsg);
       setIsLoading(false);
-      router.push('/driver/auth/login');
-    }, 2000);
+    }
   };
 
   const routes = [
@@ -99,6 +142,24 @@ export default function DriverRegisterPage() {
                 </div>
 
                 <Input
+                  label="Username"
+                  type="text"
+                  placeholder="johndoe"
+                  value={formData.username}
+                  onChange={(e) => setFormData({ ...formData, username: e.target.value })}
+                  required
+                />
+
+                <Input
+                  label="License Type"
+                  type="text"
+                  placeholder="e.g., Commercial Driver's License"
+                  value={formData.license}
+                  onChange={(e) => setFormData({ ...formData, license: e.target.value })}
+                  required
+                />
+
+                <Input
                   label="Driver's License Number"
                   type="text"
                   placeholder="ABC123456789"
@@ -108,32 +169,12 @@ export default function DriverRegisterPage() {
                 />
 
                 <Input
-                  label="Assigned Bus Number"
-                  type="text"
-                  placeholder="UNN-BUS-12"
-                  value={formData.busNumber}
-                  onChange={(e) => setFormData({ ...formData, busNumber: e.target.value })}
+                  label="License Expiry Date"
+                  type="date"
+                  value={formData.licenseExpiry}
+                  onChange={(e) => setFormData({ ...formData, licenseExpiry: e.target.value })}
                   required
                 />
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Assigned Route
-                  </label>
-                  <select
-                    value={formData.assignedRoute}
-                    onChange={(e) => setFormData({ ...formData, assignedRoute: e.target.value })}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent transition-all text-gray-900"
-                    required
-                  >
-                    <option value="">Select a route</option>
-                    {routes.map((route) => (
-                      <option key={route.id} value={route.id}>
-                        {route.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
 
                 <button
                   type="button"
@@ -170,6 +211,54 @@ export default function DriverRegisterPage() {
                   onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
                   required
                 />
+
+                <div className="pb-4 border-b border-gray-100 mt-6">
+                  <h2 className="font-medium text-gray-900">Vehicle Information</h2>
+                  <p className="text-sm text-gray-500 mt-1">Bus details</p>
+                </div>
+
+                <Input
+                  label="Vehicle Registration Number"
+                  type="text"
+                  placeholder="ABC-123-XY"
+                  value={formData.vehicleInfo.registrationNumber}
+                  onChange={(e) => setFormData({ ...formData, vehicleInfo: { ...formData.vehicleInfo, registrationNumber: e.target.value } })}
+                  required
+                />
+
+                <div className="grid grid-cols-2 gap-4">
+                  <Input
+                    label="Vehicle Make"
+                    type="text"
+                    placeholder="Toyota"
+                    value={formData.vehicleInfo.make}
+                    onChange={(e) => setFormData({ ...formData, vehicleInfo: { ...formData.vehicleInfo, make: e.target.value } })}
+                  />
+                  <Input
+                    label="Vehicle Model"
+                    type="text"
+                    placeholder="Hiace"
+                    value={formData.vehicleInfo.model}
+                    onChange={(e) => setFormData({ ...formData, vehicleInfo: { ...formData.vehicleInfo, model: e.target.value } })}
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <Input
+                    label="Capacity"
+                    type="number"
+                    placeholder="14"
+                    value={formData.vehicleInfo.capacity.toString()}
+                    onChange={(e) => setFormData({ ...formData, vehicleInfo: { ...formData.vehicleInfo, capacity: parseInt(e.target.value) || 0 } })}
+                  />
+                  <Input
+                    label="Color"
+                    type="text"
+                    placeholder="Yellow"
+                    value={formData.vehicleInfo.color}
+                    onChange={(e) => setFormData({ ...formData, vehicleInfo: { ...formData.vehicleInfo, color: e.target.value } })}
+                  />
+                </div>
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">

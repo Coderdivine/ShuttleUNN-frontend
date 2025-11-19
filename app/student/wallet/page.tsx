@@ -1,7 +1,7 @@
 'use client';
 
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect, Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import Logo from '@/components/Logo';
 import { ArrowLeft, Plus, Check } from 'lucide-react';
@@ -10,18 +10,52 @@ import { Notification, useNotification } from '@/components/Notification';
 import { useAppState } from '@/lib/AppContext';
 
 const topUpAmounts = [500, 1000, 2000, 5000, 10000, 15000];
+const paymentMethods = [
+  { id: 'card', label: 'Paystack (Card/Bank)', icon: '💳' },
+];
 
-export default function WalletPage() {
+function WalletContent() {
   const router = useRouter();
-  const { user, updateWallet } = useAppState();
+  const searchParams = useSearchParams();
+  const { user, updateWallet, verifyPayment, isLoading, error, clearError } = useAppState();
   const { notification, showNotification, clearNotification } = useNotification();
   const [selectedAmount, setSelectedAmount] = useState<number | null>(null);
+  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<string>('card');
   const [isProcessing, setIsProcessing] = useState(false);
   const [customAmount, setCustomAmount] = useState('');
+  const [isVerifying, setIsVerifying] = useState(false);
+
+  // Check for payment reference in URL (callback from Paystack)
+  useEffect(() => {
+    const reference = searchParams.get('reference');
+    if (reference && !isVerifying) {
+      setIsVerifying(true);
+      handlePaymentVerification(reference);
+    }
+  }, [searchParams]);
+
+  const handlePaymentVerification = async (reference: string) => {
+    try {
+      const result = await verifyPayment(reference);
+      if (result.success) {
+        showNotification('success', result.message);
+        setTimeout(() => {
+          router.push('/student/dashboard');
+        }, 2000);
+      } else {
+        showNotification('error', result.message);
+        setIsVerifying(false);
+      }
+    } catch (err: any) {
+      showNotification('error', 'Failed to verify payment');
+      setIsVerifying(false);
+    }
+  };
 
   const handleSelectAmount = (amount: number) => {
     setSelectedAmount(amount);
     setCustomAmount('');
+    if (error) clearError();
   };
 
   const handleCustomAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -32,26 +66,43 @@ export default function WalletPage() {
     } else {
       setSelectedAmount(null);
     }
+    if (error) clearError();
   };
 
-  const handleProceed = () => {
+  const handleProceed = async () => {
     if (!selectedAmount || selectedAmount <= 0) {
       showNotification('error', 'Please enter a valid amount');
       return;
     }
+
+    if (selectedAmount < 100) {
+      showNotification('error', 'Minimum top-up amount is ₦100');
+      return;
+    }
+
+    if (selectedAmount > 1000000) {
+      showNotification('error', 'Maximum top-up amount is ₦1,000,000');
+      return;
+    }
+
     setIsProcessing(true);
-    showNotification('success', `Top-up of ${formatCurrency(selectedAmount)} successful!`);
-    
-    // Update wallet balance
-    updateWallet(selectedAmount);
-    
-    setTimeout(() => {
+
+    try {
+      await updateWallet(selectedAmount, selectedPaymentMethod);
+      showNotification('success', `Top-up of ${formatCurrency(selectedAmount)} successful!`);
+
+      setTimeout(() => {
+        setIsProcessing(false);
+        router.push('/student/dashboard');
+      }, 1500);
+    } catch (err: any) {
+      const errorMsg = err.response?.data?.message || err.message || 'Top-up failed';
+      showNotification('error', errorMsg);
       setIsProcessing(false);
-      router.push('/student/dashboard');
-    }, 1500);
+    }
   };
 
-  const newBalance = user.walletBalance + (selectedAmount || 0);
+  const newBalance = (user?.walletBalance || 0) + (selectedAmount || 0);
 
   return (
     <div className="min-h-screen bg-white">
@@ -73,14 +124,27 @@ export default function WalletPage() {
       {/* Main Content */}
       <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12">
         {/* Hero Section */}
-        <div className="mb-12">
-          <h1 className="text-3xl sm:text-4xl font-light mb-2">
-            Top Up Wallet
-          </h1>
-          <p className="text-gray-600 text-sm">
-            Add funds instantly. Secure and fast.
-          </p>
+        <div className="mb-12 flex items-start justify-between">
+          <div>
+            <h1 className="text-3xl sm:text-4xl font-light mb-2">
+              Top Up Wallet
+            </h1>
+            <p className="text-gray-600 text-sm">
+              Add funds instantly. Secure and fast.
+            </p>
+          </div>
+          <Link href="/student/wallet/transactions">
+            <button className="text-xs font-medium text-black hover:underline flex items-center gap-1">
+              View History →
+            </button>
+          </Link>
         </div>
+
+        {error && (
+          <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm mb-6">
+            {error}
+          </div>
+        )}
 
         <div className="grid lg:grid-cols-5 gap-8">
           {/* Left Column - Balance & Selection */}
@@ -88,7 +152,7 @@ export default function WalletPage() {
             {/* Current Balance Card */}
             <div className="bg-black text-white rounded-2xl p-6 sm:p-8">
               <p className="text-xs text-gray-300 uppercase tracking-wider mb-2">Current Balance</p>
-              <h2 className="text-4xl sm:text-5xl font-light mb-6">{formatCurrency(user.walletBalance)}</h2>
+              <h2 className="text-4xl sm:text-5xl font-light mb-6">{formatCurrency(user?.walletBalance || 0)}</h2>
               <div className="pt-4 border-t border-gray-700 text-xs text-gray-300">
                 Available for rides and services
               </div>
@@ -102,7 +166,7 @@ export default function WalletPage() {
                   <button
                     key={amount}
                     onClick={() => handleSelectAmount(amount)}
-                    disabled={isProcessing}
+                    disabled={isProcessing || isLoading}
                     className={cn(
                       'p-4 rounded-xl text-center transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed',
                       selectedAmount === amount
@@ -126,9 +190,32 @@ export default function WalletPage() {
                   placeholder="e.g. 3500"
                   value={customAmount}
                   onChange={handleCustomAmountChange}
-                  disabled={isProcessing}
+                  disabled={isProcessing || isLoading}
                   className="w-full pl-8 pr-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-black transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                 />
+              </div>
+            </div>
+
+            {/* Payment Method Selection */}
+            <div className="space-y-4">
+              <h3 className="text-sm font-medium">Payment Method</h3>
+              <div className="grid grid-cols-2 gap-3">
+                {paymentMethods.map((method) => (
+                  <button
+                    key={method.id}
+                    onClick={() => setSelectedPaymentMethod(method.id)}
+                    disabled={isProcessing || isLoading}
+                    className={cn(
+                      'p-4 rounded-xl text-center transition-all disabled:opacity-50 disabled:cursor-not-allowed',
+                      selectedPaymentMethod === method.id
+                        ? 'bg-black text-white ring-2 ring-black'
+                        : 'bg-gray-100 text-gray-900 hover:bg-gray-200'
+                    )}
+                  >
+                    <p className="text-xl mb-1">{method.icon}</p>
+                    <p className="text-xs font-medium">{method.label}</p>
+                  </button>
+                ))}
               </div>
             </div>
           </div>
@@ -138,17 +225,21 @@ export default function WalletPage() {
             {/* Summary Card */}
             <div className="bg-gray-50 rounded-2xl p-6 space-y-4 h-fit sticky top-20">
               <h3 className="font-medium text-sm">Transaction Summary</h3>
-              
+
               <div className="space-y-3 text-sm">
                 <div className="flex justify-between">
                   <span className="text-gray-600">Current Balance</span>
-                  <span className="font-medium">{formatCurrency(user.walletBalance)}</span>
+                  <span className="font-medium">{formatCurrency(user?.walletBalance || 0)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-600">You're Adding</span>
                   <span className="font-medium text-green-600">
                     {selectedAmount ? '+' + formatCurrency(selectedAmount) : '—'}
                   </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Payment Method</span>
+                  <span className="font-medium capitalize">{selectedPaymentMethod}</span>
                 </div>
                 <div className="h-px bg-gray-200" />
                 <div className="flex justify-between">
@@ -159,11 +250,11 @@ export default function WalletPage() {
 
               <button
                 onClick={handleProceed}
-                disabled={!selectedAmount || selectedAmount <= 0 || isProcessing}
+                disabled={!selectedAmount || selectedAmount <= 0 || isProcessing || isLoading || isVerifying}
                 className="w-full mt-6 bg-black text-white py-3 rounded-xl font-medium text-sm hover:bg-gray-800 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
               >
                 <Plus size={16} />
-                {isProcessing ? 'Processing...' : 'Proceed to Payment'}
+                {isVerifying ? 'Verifying Payment...' : isProcessing || isLoading ? 'Processing...' : 'Proceed to Payment'}
               </button>
 
               <p className="text-xs text-gray-500 text-center">
@@ -184,7 +275,7 @@ export default function WalletPage() {
           <div className="space-y-2">
             <h4 className="font-medium">Payment Methods</h4>
             <p className="text-gray-600 text-xs leading-relaxed">
-              We accept all major payment methods. Your transactions are encrypted and secure.
+              We accept all major payment methods: Card, Phone Transfer, QR Code, and Bank Transfer. Your transactions are encrypted and secure.
             </p>
           </div>
         </div>
@@ -198,6 +289,14 @@ export default function WalletPage() {
         />
       )}
     </div>
+  );
+}
+
+export default function WalletPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-white flex items-center justify-center">Loading...</div>}>
+      <WalletContent />
+    </Suspense>
   );
 }
 

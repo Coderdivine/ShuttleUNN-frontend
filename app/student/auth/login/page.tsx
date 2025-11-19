@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { useAppState } from '@/lib/AppContext';
 import Logo from '@/components/Logo';
 import Button from '@/components/Button';
 import Input from '@/components/Input';
@@ -10,20 +11,53 @@ import { Eye, EyeOff } from 'lucide-react';
 
 export default function StudentLoginPage() {
   const router = useRouter();
+  const { login, isLoading, error, clearError } = useAppState();
   const [showPassword, setShowPassword] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
+  const [localError, setLocalError] = useState('');
   const [formData, setFormData] = useState({
-    email: '',
+    emailOrUsername: '',
     password: '',
   });
 
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value } = e.target;
+    setFormData((prev) => ({ ...prev, [name]: value }));
+    if (localError) setLocalError('');
+    if (error) clearError();
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setIsLoading(true);
-    // Simulate API call
-    await new Promise((resolve) => setTimeout(resolve, 1500));
-    router.push('/student/dashboard');
+    setLocalError('');
+
+    if (!formData.emailOrUsername.trim() || !formData.password.trim()) {
+      setLocalError('Please fill in all fields');
+      return;
+    }
+
+    try {
+      // Determine if input is email or username
+      const isEmail = formData.emailOrUsername.includes('@');
+      const loginData = {
+        [isEmail ? 'email' : 'username']: formData.emailOrUsername,
+        password: formData.password,
+      };
+
+      await login('student', loginData);
+      router.push('/student/dashboard');
+    } catch (err: any) {
+      const errorMsg = err.response?.data?.message || err.message || 'Login failed';
+      
+      // If account not found as student, suggest trying driver login
+      if (errorMsg.includes('Student not found') || errorMsg.includes('not found')) {
+        setLocalError('Student account not found. If you are a driver, please use the driver login page.');
+      } else {
+        setLocalError(errorMsg);
+      }
+    }
   };
+
+  const displayError = localError || error;
 
   return (
     <div className="min-h-screen bg-white flex flex-col">
@@ -44,14 +78,22 @@ export default function StudentLoginPage() {
             <p className="text-gray-600">Access your shuttle account</p>
           </div>
 
+          {displayError && (
+            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
+              {displayError}
+            </div>
+          )}
+
           <form onSubmit={handleSubmit} className="space-y-6 pt-4">
             <Input
-              label="Email Address"
-              type="email"
-              placeholder="your.email@unn.edu.ng"
-              value={formData.email}
-              onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+              label="Email or Username"
+              type="text"
+              name="emailOrUsername"
+              placeholder="your.email@unn.edu.ng or username"
+              value={formData.emailOrUsername}
+              onChange={handleChange}
               required
+              disabled={isLoading}
             />
 
             <div className="relative">
@@ -61,9 +103,10 @@ export default function StudentLoginPage() {
               <div className="relative">
                 <input
                   type={showPassword ? 'text' : 'password'}
+                  name="password"
                   placeholder="Enter your password"
                   value={formData.password}
-                  onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                  onChange={handleChange}
                   className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent transition-all pr-12 disabled:opacity-50 disabled:cursor-not-allowed"
                   required
                   disabled={isLoading}

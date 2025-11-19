@@ -6,16 +6,20 @@ import { useRouter } from 'next/navigation';
 import Logo from '@/components/Logo';
 import ProfileModal from '@/components/ProfileModal';
 import TransactionDetailModal from '@/components/TransactionDetailModal';
-import { Home, History, HelpCircle, LogOut, Menu, X, QrCode, User, Ellipsis, Wallet } from 'lucide-react';
-import { dummyStats, dummyTransactions } from '@/lib/dummyData';
+import { Home, History, HelpCircle, LogOut, Menu, X, QrCode, User, Wallet, Ellipsis, CheckCircle2 } from 'lucide-react';
 import { formatCurrency } from '@/lib/utils';
 import { useAppState } from '@/lib/AppContext';
+import Button from '@/components/Button';
+import Input from '@/components/Input';
+import { Notification, useNotification } from '@/components/Notification';
+import paymentService, { Bank } from '@/lib/api/paymentService';
 
 type TabType = 'all' | 'upcoming' | 'active' | 'past';
 
 export default function StudentDashboard() {
   const router = useRouter();
-  const { user, stats, updateUser } = useAppState();
+  const { user, stats, transactions, getTransactionHistory, updateProfile, isLoading, error, logout, clearError } = useAppState();
+  const { notification, showNotification, clearNotification } = useNotification();
   const [activeTab, setActiveTab] = useState<TabType>('active');
   const [showSidebar, setShowSidebar] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
@@ -25,13 +29,134 @@ export default function StudentDashboard() {
   const [sparkleClass, setSparkleClass] = useState('');
   const topUpButtonRef = useRef<HTMLButtonElement>(null);
   const [profileFormData, setProfileFormData] = useState({
-    username: user.username,
-    firstName: user.firstName,
-    lastName: user.lastName,
-    phone: user.phone,
-    regNumber: user.regNumber,
+    username: '',
+    firstName: '',
+    lastName: '',
+    phone: '',
+    regNumber: '',
+    bankDetails: {
+      accountName: '',
+      accountNumber: '',
+      bankName: '',
+      bankCode: '',
+    },
   });
   const [isSubmittingProfile, setIsSubmittingProfile] = useState(false);
+  const [banks, setBanks] = useState<Bank[]>([]);
+  const [loadingBanks, setLoadingBanks] = useState(false);
+  const [verifyingAccount, setVerifyingAccount] = useState(false);
+  const [accountVerified, setAccountVerified] = useState(false);
+  
+  // Load transactions on mount
+  useEffect(() => {
+    if (user?.id) {
+      getTransactionHistory(10, 0).catch(err => console.error('Failed to load transactions:', err));
+    }
+  }, [user?.id, getTransactionHistory]);
+  
+  // Update form data when user changes
+  useEffect(() => {
+    console.log('=== DASHBOARD USER DEBUG ===');
+    console.log('User object:', user);
+    console.log('User username:', user?.username);
+    console.log('User firstName:', user?.firstName);
+    console.log('User lastName:', user?.lastName);
+    console.log('User regNumber:', user?.regNumber);
+    console.log('=== END DASHBOARD DEBUG ===');
+    
+    if (user) {
+      setProfileFormData({
+        username: user.username || '',
+        firstName: user.firstName || '',
+        lastName: user.lastName || '',
+        phone: user.phone || '',
+        regNumber: user.regNumber || '',
+        bankDetails: {
+          accountName: user.bankDetails?.accountName || '',
+          accountNumber: user.bankDetails?.accountNumber || '',
+          bankName: user.bankDetails?.bankName || '',
+          bankCode: user.bankDetails?.bankCode || '',
+        },
+      });
+      
+      // Check if account is already verified
+      if (user.bankDetails?.accountName && user.bankDetails?.accountNumber && user.bankDetails?.bankCode) {
+        setAccountVerified(true);
+      }
+    }
+  }, [user]);
+
+  // Load banks when profile modal opens
+  useEffect(() => {
+    if (showProfileModal && banks.length === 0) {
+      loadBanks();
+    }
+  }, [showProfileModal]);
+
+  const loadBanks = async () => {
+    try {
+      setLoadingBanks(true);
+      const bankList = await paymentService.getBankList();
+      setBanks(bankList);
+    } catch (error: any) {
+      showNotification('error', error.message || 'Failed to load banks');
+    } finally {
+      setLoadingBanks(false);
+    }
+  };
+
+  const handleVerifyAccount = async () => {
+    const { accountNumber, bankCode } = profileFormData.bankDetails;
+    
+    if (!accountNumber || !bankCode) {
+      showNotification('error', 'Please enter account number and select a bank');
+      return;
+    }
+
+    if (accountNumber.length !== 10) {
+      showNotification('error', 'Account number must be 10 digits');
+      return;
+    }
+
+    try {
+      setVerifyingAccount(true);
+      const result = await paymentService.verifyBankAccount(accountNumber, bankCode);
+      
+      // Auto-fill account name and update bank name
+      const selectedBank = banks.find(b => b.code === bankCode);
+      setProfileFormData({
+        ...profileFormData,
+        bankDetails: {
+          ...profileFormData.bankDetails,
+          accountName: result.accountName,
+          bankName: selectedBank?.name || profileFormData.bankDetails.bankName,
+        },
+      });
+      
+      setAccountVerified(true);
+      showNotification('success', `Account verified: ${result.accountName}`);
+    } catch (error: any) {
+      showNotification('error', error.message || 'Failed to verify account');
+      setAccountVerified(false);
+    } finally {
+      setVerifyingAccount(false);
+    }
+  };
+
+  // Show error notifications
+  useEffect(() => {
+    if (error) {
+      showNotification('error', error);
+      clearError();
+    }
+  }, [error, showNotification, clearError]);
+
+  // Redirect if not authenticated
+  useEffect(() => {
+    if (!user) {
+      router.push('/student/auth/login');
+    }
+  }, [user, router]);
 
   // Sparkle animation every 10 seconds
   useEffect(() => {
@@ -42,19 +167,35 @@ export default function StudentDashboard() {
 
     return () => clearInterval(interval);
   }, []);
+  
+  if (!user) {
+    return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
+  }
 
   const handleLogout = () => {
+    logout();
     router.push('/');
   };
 
   const handleProfileSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setIsSubmittingProfile(true);
-    // Simulate API call
-    await new Promise((resolve) => setTimeout(resolve, 1500));
-    updateUser(profileFormData);
-    setShowProfileModal(false);
-    setIsSubmittingProfile(false);
+    try {
+      setIsSubmittingProfile(true);
+      await updateProfile({
+        firstName: profileFormData.firstName,
+        lastName: profileFormData.lastName,
+        username: profileFormData.username,
+        phone: profileFormData.phone,
+        regNumber: profileFormData.regNumber,
+        bankDetails: profileFormData.bankDetails,
+      });
+      showNotification('success', 'Profile updated successfully!');
+      setIsSubmittingProfile(false);
+      setShowProfileModal(false);
+    } catch (err: any) {
+      setIsSubmittingProfile(false);
+      showNotification('error', err.message || 'Failed to update profile');
+    }
   };
 
   const handleTransactionClick = (transaction: any) => {
@@ -62,11 +203,14 @@ export default function StudentDashboard() {
     setShowDetailModal(true);
   };
 
-  const filteredTransactions = dummyTransactions.filter((transaction) => {
+  // Filter out topup transactions - show only ride/debit transactions
+  const rideTransactions = transactions.filter((transaction) => transaction.type !== 'topup');
+  
+  const filteredTransactions = rideTransactions.filter((transaction) => {
     if (activeTab === 'all') return true;
-    if (activeTab === 'past') return true;
-    if (activeTab === 'active') return false;
-    if (activeTab === 'upcoming') return false
+    if (activeTab === 'past') return transaction.status === 'completed';
+    if (activeTab === 'active') return transaction.status !== 'completed' && transaction.status !== 'cancelled';
+    if (activeTab === 'upcoming') return false;
     return true;
   });
 
@@ -122,11 +266,11 @@ export default function StudentDashboard() {
             className="w-full flex items-center gap-3 focus:outline-none"
           >
             <div className="h-10 w-10 rounded-full bg-black text-white flex items-center justify-center font-bold text-sm">
-              {user.firstName[0]}{user.lastName[0]}
+              {user?.firstName?.[0]}{user?.lastName?.[0]}
             </div>
             <div className="flex-1 text-left">
-              <p className="text-sm font-medium">{user.firstName} {user.lastName}</p>
-              <p className="text-xs text-gray-500">{user.regNumber}</p>
+              <p className="text-sm font-medium">{user?.firstName} {user?.lastName}</p>
+              <p className="text-xs text-gray-500">{user?.regNumber}</p>
             </div>
           </button>
         </Link>
@@ -204,7 +348,7 @@ export default function StudentDashboard() {
           {/* Header */}
           <div className="mb-5">
             <h1 className="text-lg font-bold mb-0.5">
-              Welcome back, @{user.username}
+              Welcome back, @{user?.username || user?.firstName || 'Student'}
             </h1>
             <p className="text-gray-600 text-xs">Check your recent rides</p>
             <div className="mt-3 flex items-center justify-end">
@@ -228,19 +372,19 @@ export default function StudentDashboard() {
             {/* Wallet Balance Card - Black */}
             <div className="bg-black text-white rounded-lg sm:rounded-xl p-3">
               <p className="text-xs text-gray-300 mb-1">Wallet</p>
-              <p className="text-lg sm:text-2xl font-bold">{formatCurrency(user.walletBalance)}</p>
+              <p className="text-lg sm:text-2xl font-bold">{formatCurrency(user?.walletBalance || 0)}</p>
             </div>
 
             {/* Total Trips Card - White */}
             <div className="bg-white rounded-lg sm:rounded-xl p-3 border border-gray-200">
               <p className="text-xs text-gray-600 mb-1">Trips</p>
-              <p className="text-lg sm:text-2xl font-bold">{dummyStats.totalTrips}</p>
+              <p className="text-lg sm:text-2xl font-bold">{rideTransactions.length}</p>
             </div>
 
             {/* Total Spent Card - White */}
             <div className="bg-white rounded-lg sm:rounded-xl p-3 border border-gray-200 col-span-2 lg:col-span-1">
               <p className="text-xs text-gray-600 mb-1">Total Spent</p>
-              <p className="text-lg sm:text-2xl font-bold">{formatCurrency(dummyStats.totalSpent)}</p>
+              <p className="text-lg sm:text-2xl font-bold">{formatCurrency(rideTransactions.reduce((sum, t) => sum + (t.amount || 0), 0))}</p>
             </div>
           </div>
 
@@ -284,19 +428,19 @@ export default function StudentDashboard() {
                 <div className="lg:hidden space-y-2 p-4 max-h-96 overflow-y-auto">
                   {filteredTransactions.map((transaction) => (
                     <button
-                      key={transaction.id}
+                      key={transaction.transaction_id}
                       onClick={() => handleTransactionClick(transaction)}
                       className="w-full bg-gray-50 rounded-lg border border-gray-200 p-3 text-left hover:bg-gray-100 hover:border-gray-300 transition-all active:bg-gray-200"
                     >
                       <div className="flex items-start justify-between gap-2 mb-2">
                         <div className="flex-1 min-w-0">
-                          <p className="text-xs font-medium truncate">{transaction.id}</p>
-                          <p className="text-xs text-gray-600 mt-1">{transaction.date}</p>
+                          <p className="text-xs font-medium truncate">{transaction.transaction_id}</p>
+                          <p className="text-xs text-gray-600 mt-1">{new Date(transaction.createdAt).toLocaleDateString()}</p>
                         </div>
                         <p className="text-xs font-bold shrink-0">{formatCurrency(transaction.amount)}</p>
                       </div>
-                      <p className="text-xs text-gray-600 truncate mb-1">{transaction.route}</p>
-                      <p className="text-xs text-gray-500">{transaction.busNumber} • {transaction.time}</p>
+                      <p className="text-xs text-gray-600 truncate mb-1">{transaction.type} - {transaction.paymentMethod}</p>
+                      <p className="text-xs text-gray-500">{transaction.status}</p>
                     </button>
                   ))}
                 </div>
@@ -326,17 +470,17 @@ export default function StudentDashboard() {
                     <tbody className="divide-y divide-gray-200">
                       {filteredTransactions.map((transaction) => (
                         <tr 
-                          key={transaction.id} 
+                          key={transaction.transaction_id} 
                           onClick={() => handleTransactionClick(transaction)}
                           className="hover:bg-gray-50 transition-colors cursor-pointer active:bg-gray-100"
                         >
-                          <td className="px-4 py-2 text-xs font-medium">{transaction.id}</td>
+                          <td className="px-4 py-2 text-xs font-medium">{transaction.transaction_id}</td>
                           <td className="px-4 py-2 text-xs">
-                            <div>{transaction.date}</div>
-                            <div className="text-xs text-gray-500">{transaction.time}</div>
+                            <div>{new Date(transaction.createdAt).toLocaleDateString()}</div>
+                            <div className="text-xs text-gray-500">{new Date(transaction.createdAt).toLocaleTimeString()}</div>
                           </td>
-                          <td className="px-4 py-2 text-xs">{transaction.route}</td>
-                          <td className="px-4 py-2 text-xs font-medium">{transaction.busNumber}</td>
+                          <td className="px-4 py-2 text-xs">{transaction.type}</td>
+                          <td className="px-4 py-2 text-xs font-medium capitalize">{transaction.status}</td>
                           <td className="px-4 py-2 text-xs font-bold">{formatCurrency(transaction.amount)}</td>
                         </tr>
                       ))}
@@ -373,83 +517,166 @@ export default function StudentDashboard() {
 
       {/* Profile Edit Modal */}
       <ProfileModal isOpen={showProfileModal} onClose={() => setShowProfileModal(false)}>
-        <div className="text-xs text-gray-500 mb-6 font-light">
+        <div className="text-sm text-gray-500 mb-8 font-light">
           Make changes to your profile.
         </div>
-        <form onSubmit={handleProfileSubmit} className="space-y-5">
-          <div>
-            <label className="block text-xs font-light text-gray-600 mb-2">
-              Registration Number
-            </label>
-            <input
-              type="text"
-              value={profileFormData.regNumber}
-              onChange={(e) => setProfileFormData({ ...profileFormData, regNumber: e.target.value })}
-              className="w-full px-4 py-2.5 text-sm bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-gray-300 transition-all font-light"
-              required
-            />
-          </div>
+        <form onSubmit={handleProfileSubmit} className="space-y-6">
+          <Input
+            label="Registration Number"
+            type="text"
+            value={profileFormData.regNumber}
+            onChange={(e) => setProfileFormData({ ...profileFormData, regNumber: e.target.value })}
+            disabled={isSubmittingProfile || isLoading}
+          />
 
-          <div>
-            <label className="block text-xs font-light text-gray-600 mb-2">
-              Username
-            </label>
-            <input
-              type="text"
-              value={profileFormData.username}
-              onChange={(e) => setProfileFormData({ ...profileFormData, username: e.target.value })}
-              className="w-full px-4 py-2.5 text-sm bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-gray-300 transition-all font-light"
-              required
-            />
-          </div>
+          <Input
+            label="Username"
+            type="text"
+            value={profileFormData.username}
+            onChange={(e) => setProfileFormData({ ...profileFormData, username: e.target.value })}
+            disabled={isSubmittingProfile || isLoading}
+            required
+          />
 
-          <div>
-            <label className="block text-xs font-light text-gray-600 mb-2">
-              First Name
-            </label>
-            <input
-              type="text"
-              value={profileFormData.firstName}
-              onChange={(e) => setProfileFormData({ ...profileFormData, firstName: e.target.value })}
-              className="w-full px-4 py-2.5 text-sm bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-gray-300 transition-all font-light"
-              required
-            />
-          </div>
+          <Input
+            label="First Name"
+            type="text"
+            value={profileFormData.firstName}
+            onChange={(e) => setProfileFormData({ ...profileFormData, firstName: e.target.value })}
+            disabled={isSubmittingProfile || isLoading}
+            required
+          />
 
-          <div>
-            <label className="block text-xs font-light text-gray-600 mb-2">
-              Last Name
-            </label>
-            <input
-              type="text"
-              value={profileFormData.lastName}
-              onChange={(e) => setProfileFormData({ ...profileFormData, lastName: e.target.value })}
-              className="w-full px-4 py-2.5 text-sm bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-gray-300 transition-all font-light"
-              required
-            />
-          </div>
+          <Input
+            label="Last Name"
+            type="text"
+            value={profileFormData.lastName}
+            onChange={(e) => setProfileFormData({ ...profileFormData, lastName: e.target.value })}
+            disabled={isSubmittingProfile || isLoading}
+            required
+          />
 
-          <div>
-            <label className="block text-xs font-light text-gray-600 mb-2">
-              Phone Number
-            </label>
-            <input
-              type="tel"
-              value={profileFormData.phone}
-              onChange={(e) => setProfileFormData({ ...profileFormData, phone: e.target.value })}
-              className="w-full px-4 py-2.5 text-sm bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-gray-300 transition-all font-light"
-              required
-            />
+          <Input
+            label="Phone Number"
+            type="tel"
+            value={profileFormData.phone}
+            onChange={(e) => setProfileFormData({ ...profileFormData, phone: e.target.value })}
+            disabled={isSubmittingProfile || isLoading}
+            required
+          />
+
+          <div className="pt-4 border-t border-gray-200">
+            <h3 className="font-medium text-gray-900 mb-4">Bank Details (Optional)</h3>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Bank Name <span className="text-red-500">*</span>
+                </label>
+                <select
+                  value={profileFormData.bankDetails.bankCode}
+                  onChange={(e) => {
+                    const selectedBank = banks.find(b => b.code === e.target.value);
+                    setProfileFormData({ 
+                      ...profileFormData, 
+                      bankDetails: { 
+                        ...profileFormData.bankDetails, 
+                        bankCode: e.target.value,
+                        bankName: selectedBank?.name || '',
+                      }
+                    });
+                    setAccountVerified(false);
+                  }}
+                  disabled={isSubmittingProfile || isLoading || loadingBanks}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <option value="">
+                    {loadingBanks ? 'Loading banks...' : 'Select your bank'}
+                  </option>
+                  {banks.map((bank) => (
+                    <option key={bank.code} value={bank.code}>
+                      {bank.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Account Number <span className="text-red-500">*</span>
+                </label>
+                <div className="flex gap-2">
+                  <Input
+                    type="text"
+                    placeholder="1234567890"
+                    maxLength={10}
+                    value={profileFormData.bankDetails.accountNumber}
+                    onChange={(e) => {
+                      const value = e.target.value.replace(/\D/g, '');
+                      setProfileFormData({ 
+                        ...profileFormData, 
+                        bankDetails: { ...profileFormData.bankDetails, accountNumber: value }
+                      });
+                      setAccountVerified(false);
+                    }}
+                    disabled={isSubmittingProfile || isLoading}
+                    className="flex-1"
+                  />
+                  <Button
+                    type="button"
+                    onClick={handleVerifyAccount}
+                    disabled={
+                      isSubmittingProfile || 
+                      isLoading || 
+                      verifyingAccount || 
+                      !profileFormData.bankDetails.accountNumber || 
+                      !profileFormData.bankDetails.bankCode ||
+                      profileFormData.bankDetails.accountNumber.length !== 10
+                    }
+                    className="px-4 py-2 whitespace-nowrap"
+                  >
+                    {verifyingAccount ? 'Verifying...' : 'Verify'}
+                  </Button>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <span className="flex items-center gap-2">
+                    Account Name
+                    {accountVerified && (
+                      <CheckCircle2 className="w-4 h-4 text-green-600" />
+                    )}
+                  </span>
+                </label>
+                <Input
+                  type="text"
+                  placeholder="Account name will appear after verification"
+                  value={profileFormData.bankDetails.accountName}
+                  disabled={true}
+                  className="bg-gray-50"
+                />
+              </div>
+
+              {accountVerified && (
+                <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+                  <p className="text-sm text-green-800 flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4" />
+                    Account verified successfully
+                  </p>
+                </div>
+              )}
+            </div>
           </div>
 
           <div className="pt-4">
-            <button
+            <Button
               type="submit"
-              disabled={isSubmittingProfile}
-              className="w-full bg-black text-white px-6 py-3 rounded-full font-normal text-xs uppercase tracking-widest hover:bg-gray-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.98]"
+              variant="primary"
+              className="w-full"
+              disabled={isSubmittingProfile || isLoading}
             >
-              {isSubmittingProfile ? 'Updating...' : 'PROCEED'}
-            </button>
+              {isSubmittingProfile || isLoading ? 'UPDATING...' : 'PROCEED'}
+            </Button>
           </div>
         </form>
       </ProfileModal>
@@ -460,6 +687,14 @@ export default function StudentDashboard() {
         onClose={() => setShowDetailModal(false)}
         transaction={selectedTransaction}
       />
+
+      {notification && (
+        <Notification
+          type={notification.type}
+          message={notification.message}
+          onClose={clearNotification}
+        />
+      )}
     </div>
   );
 }

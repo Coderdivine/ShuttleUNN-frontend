@@ -1,8 +1,12 @@
 import axios from 'axios';
 
+const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:2060';
+
+console.log('[Axios] API URL:', apiUrl);
+
 const api = axios.create({
-  baseURL: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000',
-  withCredentials: true,
+  baseURL: apiUrl,
+  withCredentials: false,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -11,7 +15,7 @@ const api = axios.create({
 // Request interceptor
 api.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem('token');
+    const token = localStorage.getItem('shuttleunn-token');
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
@@ -27,7 +31,7 @@ api.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401) {
-      localStorage.removeItem('token');
+      localStorage.removeItem('shuttleunn-token');
       window.location.href = '/login';
     }
     return Promise.reject(error);

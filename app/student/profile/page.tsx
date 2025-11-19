@@ -1,34 +1,79 @@
 'use client';
 
-import { useState, Suspense } from 'react';
+import { useState, Suspense, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { dummyStudent } from '@/lib/dummyData';
 import Button from '@/components/Button';
 import Input from '@/components/Input';
 import ProfileModal from '@/components/ProfileModal';
 import { Notification, useNotification } from '@/components/Notification';
+import { useAppState } from '@/lib/AppContext';
 
 function EditProfileContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const isOpen = searchParams.get('open') === 'true';
   const { notification, showNotification, clearNotification } = useNotification();
+  const { user, isLoading, error, updateProfile, clearError } = useAppState();
   const [formData, setFormData] = useState({
-    username: dummyStudent.username,
-    firstName: dummyStudent.firstName,
-    lastName: dummyStudent.lastName,
-    phone: dummyStudent.phone,
+    username: '',
+    firstName: '',
+    lastName: '',
+    phone: '',
   });
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Load initial form data from user context
+  useEffect(() => {
+    if (user) {
+      setFormData({
+        username: user.username || '',
+        firstName: user.firstName || '',
+        lastName: user.lastName || '',
+        phone: user.phone || '',
+      });
+    }
+  }, [user]);
+
+  // Show error notification if there's an error
+  useEffect(() => {
+    if (error) {
+      showNotification('error', error);
+      clearError();
+    }
+  }, [error, showNotification, clearError]);
 
   const handleClose = () => {
     router.back();
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    showNotification('success', 'Profile updated successfully!');
-    setTimeout(handleClose, 1500);
+    if (!user?.id) return;
+
+    try {
+      setIsSubmitting(true);
+      await updateProfile({
+        firstName: formData.firstName,
+        lastName: formData.lastName,
+        username: formData.username,
+        phone: formData.phone,
+      });
+      showNotification('success', 'Profile updated successfully!');
+      setIsSubmitting(false);
+      setTimeout(handleClose, 1500);
+    } catch (err: any) {
+      setIsSubmitting(false);
+      showNotification('error', err.message || 'Failed to update profile');
+    }
   };
+
+  if (!user) {
+    return (
+      <ProfileModal isOpen={isOpen} onClose={handleClose}>
+        <div className="text-center py-8">Loading profile...</div>
+      </ProfileModal>
+    );
+  }
 
   return (
     <>
@@ -42,6 +87,7 @@ function EditProfileContent() {
             type="text"
             value={formData.username}
             onChange={(e) => setFormData({ ...formData, username: e.target.value })}
+            disabled={isSubmitting || isLoading}
             required
           />
 
@@ -50,6 +96,7 @@ function EditProfileContent() {
             type="text"
             value={formData.firstName}
             onChange={(e) => setFormData({ ...formData, firstName: e.target.value })}
+            disabled={isSubmitting || isLoading}
             required
           />
 
@@ -58,6 +105,7 @@ function EditProfileContent() {
             type="text"
             value={formData.lastName}
             onChange={(e) => setFormData({ ...formData, lastName: e.target.value })}
+            disabled={isSubmitting || isLoading}
             required
           />
 
@@ -66,12 +114,18 @@ function EditProfileContent() {
             type="tel"
             value={formData.phone}
             onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+            disabled={isSubmitting || isLoading}
             required
           />
 
           <div className="pt-4">
-            <Button type="submit" variant="primary" className="w-full">
-              PROCEED
+            <Button 
+              type="submit" 
+              variant="primary" 
+              className="w-full"
+              disabled={isSubmitting || isLoading}
+            >
+              {isSubmitting || isLoading ? 'UPDATING...' : 'PROCEED'}
             </Button>
           </div>
         </form>

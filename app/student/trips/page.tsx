@@ -1,15 +1,17 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Clock, MapPin, Wallet, Smartphone, QrCode, Zap, Home, HelpCircle, LogOut, Menu, X, User, Ellipsis, ChevronLeft } from 'lucide-react';
+import { Clock, MapPin, Wallet, Smartphone, QrCode, Zap, Home, HelpCircle, LogOut, Menu, X, User, ChevronLeft } from 'lucide-react';
 import Logo from '@/components/Logo';
 import ProfileModal from '@/components/ProfileModal';
-import { dummyTransactions } from '@/lib/dummyData';
 import { formatCurrency } from '@/lib/utils';
 import TransactionDetailModal from '@/components/TransactionDetailModal';
 import { useAppState } from '@/lib/AppContext';
+import Button from '@/components/Button';
+import Input from '@/components/Input';
+import { Notification, useNotification } from '@/components/Notification';
 
 type FilterType = 'all' | 'thisWeek' | 'thisMonth' | 'lastMonth';
 
@@ -18,37 +20,114 @@ const paymentMethodIcons = {
   phone: Smartphone,
   qrcode: QrCode,
   transfer: Zap,
+  wallet: Wallet,
 };
+
+function getDateRange(filter: FilterType) {
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  
+  switch (filter) {
+    case 'thisWeek': {
+      const weekAgo = new Date(today);
+      weekAgo.setDate(weekAgo.getDate() - 7);
+      return { start: weekAgo, end: now };
+    }
+    case 'thisMonth': {
+      const monthAgo = new Date(now.getFullYear(), now.getMonth(), 1);
+      return { start: monthAgo, end: now };
+    }
+    case 'lastMonth': {
+      const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      const lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0);
+      return { start: lastMonthStart, end: lastMonthEnd };
+    }
+    default:
+      return { start: new Date(0), end: now };
+  }
+}
+
+function filterTransactions(transactions: any[], filter: FilterType) {
+  const { start, end } = getDateRange(filter);
+  return transactions.filter(t => {
+    const tDate = new Date(t.createdAt);
+    return tDate >= start && tDate <= end;
+  });
+}
 
 export default function MyTripsPage() {
   const router = useRouter();
-  const { user, updateUser } = useAppState();
+  const { user, isLoading, error, logout, updateProfile, transactions, getTransactionHistory, clearError } = useAppState();
+  const { notification, showNotification, clearNotification } = useNotification();
   const [activeFilter, setActiveFilter] = useState<FilterType>('all');
   const [selectedTransaction, setSelectedTransaction] = useState<any>(null);
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [showSidebar, setShowSidebar] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [profileFormData, setProfileFormData] = useState({
-    username: user.username,
-    firstName: user.firstName,
-    lastName: user.lastName,
-    phone: user.phone,
-    regNumber: user.regNumber,
+    username: '',
+    firstName: '',
+    lastName: '',
+    phone: '',
+    regNumber: '',
   });
   const [isSubmittingProfile, setIsSubmittingProfile] = useState(false);
 
+  // Load transactions on mount
+  useEffect(() => {
+    if (user?.id) {
+      getTransactionHistory(50, 0).catch(err => {
+        console.error('Failed to load transactions:', err);
+      });
+    }
+  }, [user?.id, getTransactionHistory]);
+
+  // Load profile data into form
+  useEffect(() => {
+    if (user) {
+      setProfileFormData({
+        username: user.username || '',
+        firstName: user.firstName || '',
+        lastName: user.lastName || '',
+        phone: user.phone || '',
+        regNumber: user.regNumber || '',
+      });
+    }
+  }, [user]);
+
+  // Show error notification
+  useEffect(() => {
+    if (error) {
+      showNotification('error', error);
+      clearError();
+    }
+  }, [error, showNotification, clearError]);
+
   const handleLogout = () => {
+    logout();
     router.push('/');
   };
 
   const handleProfileSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setIsSubmittingProfile(true);
-    // Simulate API call
-    await new Promise((resolve) => setTimeout(resolve, 1500));
-    updateUser(profileFormData);
-    setShowProfileModal(false);
-    setIsSubmittingProfile(false);
+    if (!user?.id) return;
+
+    try {
+      setIsSubmittingProfile(true);
+      await updateProfile({
+        firstName: profileFormData.firstName,
+        lastName: profileFormData.lastName,
+        username: profileFormData.username,
+        phone: profileFormData.phone,
+        regNumber: profileFormData.regNumber,
+      });
+      showNotification('success', 'Profile updated successfully!');
+      setIsSubmittingProfile(false);
+      setShowProfileModal(false);
+    } catch (err: any) {
+      setIsSubmittingProfile(false);
+      showNotification('error', err.message || 'Failed to update profile');
+    }
   };
 
   const filters: { id: FilterType; label: string }[] = [
@@ -63,7 +142,20 @@ export default function MyTripsPage() {
     setShowDetailModal(true);
   };
 
-  const totalSpent = dummyTransactions.reduce((sum, t) => sum + t.amount, 0);
+  // Filter out topup transactions - show only ride/debit transactions
+  const rideTransactions = transactions.filter((t) => t.type !== 'topup');
+  
+  // Filter transactions based on active filter
+  const filteredTransactions = filterTransactions(rideTransactions, activeFilter);
+  const totalSpent = filteredTransactions.reduce((sum, t) => sum + (t.amount || 0), 0);
+
+  if (!user) {
+    return (
+      <div className="min-h-screen bg-white flex items-center justify-center">
+        <p>Loading profile...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-white flex">
@@ -111,27 +203,24 @@ export default function MyTripsPage() {
           </button>
         </nav>
 
-        <Link href="/student/trips" className="p-4 border-t border-gray-200 hover:bg-gray-50 transition-colors block">
-          <button
-            onClick={() => setShowProfileModal(true)}
-            className="w-full flex items-center gap-3 focus:outline-none"
-          >
-            <div className="h-10 w-10 rounded-full bg-black text-white flex items-center justify-center font-bold text-sm">
-              {user.firstName[0]}{user.lastName[0]}
+        <button onClick={() => setShowProfileModal(true)} className="p-4 border-t border-gray-200 hover:bg-gray-50 transition-colors w-full text-left">
+          <div className="w-full flex items-center gap-3">
+            <div className="h-10 w-10 rounded-full bg-black text-white flex items-center justify-center font-bold text-sm shrink-0">
+              {user.firstName?.[0]}{user.lastName?.[0]}
             </div>
-            <div className="flex-1 text-left">
-              <p className="text-sm font-medium">{user.firstName} {user.lastName}</p>
-              <p className="text-xs text-gray-500">{user.regNumber}</p>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium truncate">{user.firstName} {user.lastName}</p>
+              <p className="text-xs text-gray-500 truncate">{user.regNumber || 'Student'}</p>
             </div>
-          </button>
-        </Link>
+          </div>
+        </button>
       </aside>
 
       {/* Mobile Sidebar */}
       {showSidebar && (
         <div className="lg:hidden fixed inset-0 z-50 bg-black/50" onClick={() => setShowSidebar(false)}>
           <aside
-            className="w-64 bg-white h-full"
+            className="w-64 bg-white h-full overflow-y-auto"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="p-6 border-b border-gray-200 flex items-center justify-between">
@@ -195,7 +284,7 @@ export default function MyTripsPage() {
               My Trips
             </h1>
             <p className="text-gray-600 text-sm">
-              {dummyTransactions.length} rides recorded
+              {filteredTransactions.length} rides recorded
             </p>
           </div>
 
@@ -207,7 +296,7 @@ export default function MyTripsPage() {
             </div>
             <div className="bg-gray-50 rounded-lg p-3">
               <p className="text-xs text-gray-600 mb-1">Avg. Fare</p>
-              <p className="text-lg font-bold">{formatCurrency(Math.round(totalSpent / dummyTransactions.length))}</p>
+              <p className="text-lg font-bold">{filteredTransactions.length > 0 ? formatCurrency(Math.round(totalSpent / filteredTransactions.length)) : formatCurrency(0)}</p>
             </div>
           </div>
 
@@ -215,7 +304,7 @@ export default function MyTripsPage() {
           <div className="hidden lg:grid grid-cols-3 gap-4 mb-8">
             <div className="bg-white rounded-lg border border-gray-200 p-4">
               <p className="text-xs text-gray-600 mb-1 uppercase tracking-wider">Total Trips</p>
-              <p className="text-2xl font-bold">{dummyTransactions.length}</p>
+              <p className="text-2xl font-bold">{filteredTransactions.length}</p>
             </div>
             <div className="bg-white rounded-lg border border-gray-200 p-4">
               <p className="text-xs text-gray-600 mb-1 uppercase tracking-wider">Total Spent</p>
@@ -223,7 +312,7 @@ export default function MyTripsPage() {
             </div>
             <div className="bg-white rounded-lg border border-gray-200 p-4">
               <p className="text-xs text-gray-600 mb-1 uppercase tracking-wider">Average Fare</p>
-              <p className="text-2xl font-bold">{formatCurrency(Math.round(totalSpent / dummyTransactions.length))}</p>
+              <p className="text-2xl font-bold">{filteredTransactions.length > 0 ? formatCurrency(Math.round(totalSpent / filteredTransactions.length)) : formatCurrency(0)}</p>
             </div>
           </div>
 
@@ -244,91 +333,108 @@ export default function MyTripsPage() {
             ))}
           </div>
 
-          {/* Trip List - Card Layout (Mobile & Tablet) */}
-          <div className="space-y-3 lg:hidden">
-            {dummyTransactions.map((trip) => {
-              const PaymentIcon = paymentMethodIcons[trip.paymentMethod as keyof typeof paymentMethodIcons];
-              return (
-                <button
-                  key={trip.id}
-                  onClick={() => handleTripClick(trip)}
-                  className="w-full bg-white rounded-lg border border-gray-200 p-4 text-left hover:border-gray-300 hover:shadow-sm transition-all active:bg-gray-50"
-                >
-                  <div className="flex items-start justify-between gap-3 mb-3">
-                    <div className="flex-1 min-w-0">
-                      <h3 className="font-bold text-sm mb-1 truncate">{trip.route}</h3>
-                      <p className="text-xs text-gray-600">{trip.date}</p>
-                    </div>
-                    <div className="text-right shrink-0">
-                      <p className="font-bold text-sm">{formatCurrency(trip.amount)}</p>
-                      <p className="text-xs text-green-600 font-medium capitalize">{trip.status}</p>
-                    </div>
-                  </div>
-                  
-                  <div className="flex items-center gap-2 text-xs text-gray-600 mb-3">
-                    <MapPin size={14} />
-                    <span className="truncate">{trip.from} → {trip.to}</span>
-                  </div>
-
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="text-gray-600">{trip.busNumber} • {trip.time}</span>
-                    <div className="flex items-center gap-1 text-gray-500">
-                      <PaymentIcon size={14} />
-                      <span className="capitalize">{trip.paymentMethod}</span>
-                    </div>
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Trip List - Table Layout (Desktop) */}
-          <div className="hidden lg:block bg-white rounded-lg border border-gray-200 overflow-hidden">
-            <table className="w-full">
-              <thead className="bg-gray-50 border-b border-gray-200">
-                <tr>
-                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Route</th>
-                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Date & Time</th>
-                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Bus</th>
-                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Payment</th>
-                  <th className="px-6 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">Amount</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-200">
-                {dummyTransactions.map((trip) => {
-                  const PaymentIcon = paymentMethodIcons[trip.paymentMethod as keyof typeof paymentMethodIcons];
-                  return (
-                    <tr
-                      key={trip.id}
-                      onClick={() => handleTripClick(trip)}
-                      className="hover:bg-gray-50 transition-colors cursor-pointer active:bg-gray-100"
-                    >
-                      <td className="px-6 py-3 text-sm font-medium">{trip.route}</td>
-                      <td className="px-6 py-3 text-sm">
-                        <div>{trip.date}</div>
-                        <div className="text-xs text-gray-500">{trip.time}</div>
-                      </td>
-                      <td className="px-6 py-3 text-sm font-medium">{trip.busNumber}</td>
-                      <td className="px-6 py-3 text-sm">
-                        <div className="flex items-center gap-2">
-                          <PaymentIcon size={14} className="text-gray-600" />
-                          <span className="capitalize text-xs">{trip.paymentMethod}</span>
-                        </div>
-                      </td>
-                      <td className="px-6 py-3 text-sm font-bold text-right">{formatCurrency(trip.amount)}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-
-          {dummyTransactions.length === 0 && (
+          {/* Loading State */}
+          {isLoading && (
             <div className="text-center py-16">
-              <div className="text-5xl mb-3">🚌</div>
-              <h3 className="text-2xl font-bold mb-2">No trips yet</h3>
-              <p className="text-gray-600 text-sm">Your ride history will appear here</p>
+              <p className="text-gray-600">Loading transactions...</p>
             </div>
+          )}
+
+          {/* Trip List - Card Layout (Mobile & Tablet) */}
+          {!isLoading && (
+            <>
+              <div className="space-y-3 lg:hidden">
+                {filteredTransactions.length > 0 ? (
+                  filteredTransactions.map((trip) => {
+                    const PaymentIcon = paymentMethodIcons[trip.paymentMethod as keyof typeof paymentMethodIcons] || Wallet;
+                    return (
+                      <button
+                        key={trip.transaction_id}
+                        onClick={() => handleTripClick(trip)}
+                        className="w-full bg-white rounded-lg border border-gray-200 p-4 text-left hover:border-gray-300 hover:shadow-sm transition-all active:bg-gray-50"
+                      >
+                        <div className="flex items-start justify-between gap-3 mb-3">
+                          <div className="flex-1 min-w-0">
+                            <h3 className="font-bold text-sm mb-1">Trip</h3>
+                            <p className="text-xs text-gray-600">{new Date(trip.createdAt).toLocaleDateString()}</p>
+                          </div>
+                          <div className="text-right shrink-0">
+                            <p className="font-bold text-sm">{formatCurrency(trip.amount)}</p>
+                            <p className={`text-xs font-medium capitalize ${trip.status === 'completed' ? 'text-green-600' : trip.status === 'pending' ? 'text-yellow-600' : 'text-red-600'}`}>{trip.status}</p>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="text-gray-600 capitalize">{trip.type} • {trip.paymentMethod}</span>
+                          <div className="flex items-center gap-1 text-gray-500">
+                            <PaymentIcon size={14} />
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })
+                ) : (
+                  <div className="text-center py-16">
+                    <div className="text-5xl mb-3">🚌</div>
+                    <h3 className="text-2xl font-bold mb-2">No trips yet</h3>
+                    <p className="text-gray-600 text-sm">Your ride history will appear here</p>
+                  </div>
+                )}
+              </div>
+
+              {/* Trip List - Table Layout (Desktop) */}
+              <div className="hidden lg:block bg-white rounded-lg border border-gray-200 overflow-hidden">
+                {filteredTransactions.length > 0 ? (
+                  <table className="w-full">
+                    <thead className="bg-gray-50 border-b border-gray-200">
+                      <tr>
+                        <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Type</th>
+                        <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Date</th>
+                        <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Payment</th>
+                        <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Status</th>
+                        <th className="px-6 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">Amount</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-200">
+                      {filteredTransactions.map((trip) => {
+                        const PaymentIcon = paymentMethodIcons[trip.paymentMethod as keyof typeof paymentMethodIcons] || Wallet;
+                        return (
+                          <tr
+                            key={trip.transaction_id}
+                            onClick={() => handleTripClick(trip)}
+                            className="hover:bg-gray-50 transition-colors cursor-pointer active:bg-gray-100"
+                          >
+                            <td className="px-6 py-3 text-sm font-medium capitalize">{trip.type}</td>
+                            <td className="px-6 py-3 text-sm">
+                              <div>{new Date(trip.createdAt).toLocaleDateString()}</div>
+                              <div className="text-xs text-gray-500">{new Date(trip.createdAt).toLocaleTimeString()}</div>
+                            </td>
+                            <td className="px-6 py-3 text-sm">
+                              <div className="flex items-center gap-2">
+                                <PaymentIcon size={14} className="text-gray-600" />
+                                <span className="capitalize text-xs">{trip.paymentMethod}</span>
+                              </div>
+                            </td>
+                            <td className="px-6 py-3 text-sm">
+                              <span className={`capitalize text-xs font-medium ${trip.status === 'completed' ? 'text-green-600' : trip.status === 'pending' ? 'text-yellow-600' : 'text-red-600'}`}>
+                                {trip.status}
+                              </span>
+                            </td>
+                            <td className="px-6 py-3 text-sm font-bold text-right">{formatCurrency(trip.amount)}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                ) : (
+                  <div className="text-center py-16">
+                    <div className="text-5xl mb-3">🚌</div>
+                    <h3 className="text-2xl font-bold mb-2">No trips yet</h3>
+                    <p className="text-gray-600 text-sm">Your ride history will appear here</p>
+                  </div>
+                )}
+              </div>
+            </>
           )}
         </div>
       </main>
@@ -364,86 +470,74 @@ export default function MyTripsPage() {
 
       {/* Profile Edit Modal */}
       <ProfileModal isOpen={showProfileModal} onClose={() => setShowProfileModal(false)}>
-        <div className="text-xs text-gray-500 mb-6 font-light">
+        <div className="text-sm text-gray-500 mb-8 font-light">
           Make changes to your profile.
         </div>
-        <form onSubmit={handleProfileSubmit} className="space-y-5">
-          <div>
-            <label className="block text-xs font-light text-gray-600 mb-2">
-              Registration Number
-            </label>
-            <input
-              type="text"
-              value={profileFormData.regNumber}
-              onChange={(e) => setProfileFormData({ ...profileFormData, regNumber: e.target.value })}
-              className="w-full px-4 py-2.5 text-sm bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-gray-300 transition-all font-light"
-              required
-            />
-          </div>
+        <form onSubmit={handleProfileSubmit} className="space-y-6">
+          <Input
+            label="Registration Number"
+            type="text"
+            value={profileFormData.regNumber}
+            onChange={(e) => setProfileFormData({ ...profileFormData, regNumber: e.target.value })}
+            disabled={isSubmittingProfile || isLoading}
+          />
 
-          <div>
-            <label className="block text-xs font-light text-gray-600 mb-2">
-              Username
-            </label>
-            <input
-              type="text"
-              value={profileFormData.username}
-              onChange={(e) => setProfileFormData({ ...profileFormData, username: e.target.value })}
-              className="w-full px-4 py-2.5 text-sm bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-gray-300 transition-all font-light"
-              required
-            />
-          </div>
+          <Input
+            label="Username"
+            type="text"
+            value={profileFormData.username}
+            onChange={(e) => setProfileFormData({ ...profileFormData, username: e.target.value })}
+            disabled={isSubmittingProfile || isLoading}
+            required
+          />
 
-          <div>
-            <label className="block text-xs font-light text-gray-600 mb-2">
-              First Name
-            </label>
-            <input
-              type="text"
-              value={profileFormData.firstName}
-              onChange={(e) => setProfileFormData({ ...profileFormData, firstName: e.target.value })}
-              className="w-full px-4 py-2.5 text-sm bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-gray-300 transition-all font-light"
-              required
-            />
-          </div>
+          <Input
+            label="First Name"
+            type="text"
+            value={profileFormData.firstName}
+            onChange={(e) => setProfileFormData({ ...profileFormData, firstName: e.target.value })}
+            disabled={isSubmittingProfile || isLoading}
+            required
+          />
 
-          <div>
-            <label className="block text-xs font-light text-gray-600 mb-2">
-              Last Name
-            </label>
-            <input
-              type="text"
-              value={profileFormData.lastName}
-              onChange={(e) => setProfileFormData({ ...profileFormData, lastName: e.target.value })}
-              className="w-full px-4 py-2.5 text-sm bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-gray-300 transition-all font-light"
-              required
-            />
-          </div>
+          <Input
+            label="Last Name"
+            type="text"
+            value={profileFormData.lastName}
+            onChange={(e) => setProfileFormData({ ...profileFormData, lastName: e.target.value })}
+            disabled={isSubmittingProfile || isLoading}
+            required
+          />
 
-          <div>
-            <label className="block text-xs font-light text-gray-600 mb-2">
-              Phone Number
-            </label>
-            <input
-              type="tel"
-              value={profileFormData.phone}
-              onChange={(e) => setProfileFormData({ ...profileFormData, phone: e.target.value })}
-              className="w-full px-4 py-2.5 text-sm bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-gray-300 transition-all font-light"
-              required
-            />
-          </div>
+          <Input
+            label="Phone Number"
+            type="tel"
+            value={profileFormData.phone}
+            onChange={(e) => setProfileFormData({ ...profileFormData, phone: e.target.value })}
+            disabled={isSubmittingProfile || isLoading}
+            required
+          />
 
           <div className="pt-4">
-            <button
+            <Button
               type="submit"
-              disabled={isSubmittingProfile}
-              className="w-full bg-black text-white px-6 py-3 rounded-full font-normal text-xs uppercase tracking-widest hover:bg-gray-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.98]"
+              variant="primary"
+              className="w-full"
+              disabled={isSubmittingProfile || isLoading}
             >
-              {isSubmittingProfile ? 'Updating...' : 'PROCEED'}
-            </button>
+              {isSubmittingProfile || isLoading ? 'UPDATING...' : 'PROCEED'}
+            </Button>
           </div>
         </form>
       </ProfileModal>
+
+      {notification && (
+        <Notification
+          type={notification.type}
+          message={notification.message}
+          onClose={clearNotification}
+        />
+      )}
     </div>
   );
 }

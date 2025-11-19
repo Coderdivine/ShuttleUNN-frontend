@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { useAppState } from '@/lib/AppContext';
 import Logo from '@/components/Logo';
 import Button from '@/components/Button';
 import Input from '@/components/Input';
@@ -10,9 +11,10 @@ import { Eye, EyeOff, UserCheck, ArrowRight } from 'lucide-react';
 
 export default function StudentRegisterPage() {
   const router = useRouter();
+  const { register, isLoading, error, clearError } = useAppState();
   const [showPassword, setShowPassword] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
   const [step, setStep] = useState(1);
+  const [localError, setLocalError] = useState('');
   const [formData, setFormData] = useState({
     regNumber: '',
     email: '',
@@ -24,12 +26,79 @@ export default function StudentRegisterPage() {
     department: '',
   });
 
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value } = e.target;
+    setFormData((prev) => ({ ...prev, [name]: value }));
+    if (localError) setLocalError('');
+    if (error) clearError();
+  };
+
+  const validateStep1 = (): boolean => {
+    if (!formData.firstName.trim() || !formData.lastName.trim() || !formData.username.trim() || !formData.regNumber.trim() || !formData.department.trim()) {
+      setLocalError('Please fill in all fields');
+      return false;
+    }
+    if (formData.username.length < 3) {
+      setLocalError('Username must be at least 3 characters');
+      return false;
+    }
+    return true;
+  };
+
+  const validateStep2 = (): boolean => {
+    if (!formData.email.trim() || !formData.phone.trim() || !formData.password.trim()) {
+      setLocalError('Please fill in all fields');
+      return false;
+    }
+    if (!formData.email.includes('@')) {
+      setLocalError('Please enter a valid email');
+      return false;
+    }
+    if (formData.password.length < 8) {
+      setLocalError('Password must be at least 8 characters');
+      return false;
+    }
+    if (!/\d/.test(formData.password)) {
+      setLocalError('Password must contain at least one number');
+      return false;
+    }
+    return true;
+  };
+
+  const handleNextStep = () => {
+    setLocalError('');
+    if (validateStep1()) {
+      setStep(2);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setIsLoading(true);
-    await new Promise((resolve) => setTimeout(resolve, 1500));
-    router.push('/student/dashboard');
+    setLocalError('');
+
+    if (!validateStep2()) {
+      return;
+    }
+
+    try {
+      await register('student', {
+        firstName: formData.firstName,
+        lastName: formData.lastName,
+        username: formData.username,
+        email: formData.email,
+        phone: formData.phone,
+        regNumber: formData.regNumber,
+        department: formData.department,
+        password: formData.password,
+      });
+      router.push('/student/dashboard');
+    } catch (err: any) {
+      const errorMsg = err.response?.data?.message || err.message || 'Registration failed';
+      setLocalError(errorMsg);
+    }
   };
+
+  const displayError = localError || error;
 
   return (
     <div className="min-h-screen bg-white flex flex-col">
@@ -57,6 +126,12 @@ export default function StudentRegisterPage() {
             <p className="text-sm text-gray-500 mt-3">Begin your shuttle journey</p>
           </div>
 
+          {displayError && (
+            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm mb-6">
+              {displayError}
+            </div>
+          )}
+
           <form onSubmit={handleSubmit} className="space-y-6">
             {/* Step 1: Personal Information */}
             {step === 1 && (
@@ -70,52 +145,63 @@ export default function StudentRegisterPage() {
                   <Input
                     label="First Name"
                     type="text"
+                    name="firstName"
                     placeholder="John"
                     value={formData.firstName}
-                    onChange={(e) => setFormData({ ...formData, firstName: e.target.value })}
+                    onChange={handleChange}
                     required
+                    disabled={isLoading}
                   />
                   <Input
                     label="Last Name"
                     type="text"
+                    name="lastName"
                     placeholder="Doe"
                     value={formData.lastName}
-                    onChange={(e) => setFormData({ ...formData, lastName: e.target.value })}
+                    onChange={handleChange}
                     required
+                    disabled={isLoading}
                   />
                 </div>
 
                 <Input
                   label="Username"
                   type="text"
+                  name="username"
                   placeholder="johndoe_unn"
                   value={formData.username}
-                  onChange={(e) => setFormData({ ...formData, username: e.target.value })}
+                  onChange={handleChange}
                   required
+                  disabled={isLoading}
                 />
 
                 <Input
                   label="Registration Number"
                   type="text"
+                  name="regNumber"
                   placeholder="2020/123456"
                   value={formData.regNumber}
-                  onChange={(e) => setFormData({ ...formData, regNumber: e.target.value })}
+                  onChange={handleChange}
                   required
+                  disabled={isLoading}
                 />
 
                 <Input
                   label="Department"
                   type="text"
+                  name="department"
                   placeholder="Computer Science"
                   value={formData.department}
-                  onChange={(e) => setFormData({ ...formData, department: e.target.value })}
+                  onChange={handleChange}
                   required
+                  disabled={isLoading}
                 />
 
                 <button
                   type="button"
-                  onClick={() => setStep(2)}
-                  className="w-full bg-black text-white py-3 rounded-lg font-medium hover:bg-gray-800 transition-colors active:scale-95 flex items-center justify-center gap-2 mt-8"
+                  onClick={handleNextStep}
+                  disabled={isLoading}
+                  className="w-full bg-black text-white py-3 rounded-lg font-medium hover:bg-gray-800 transition-colors active:scale-95 flex items-center justify-center gap-2 mt-8 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Continue <ArrowRight size={18} />
                 </button>
@@ -133,19 +219,23 @@ export default function StudentRegisterPage() {
                 <Input
                   label="Email Address"
                   type="email"
+                  name="email"
                   placeholder="your.email@unn.edu.ng"
                   value={formData.email}
-                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                  onChange={handleChange}
                   required
+                  disabled={isLoading}
                 />
 
                 <Input
                   label="Phone Number"
                   type="tel"
+                  name="phone"
                   placeholder="+234 XXX XXX XXXX"
                   value={formData.phone}
-                  onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                  onChange={handleChange}
                   required
+                  disabled={isLoading}
                 />
 
                 <div>
@@ -155,16 +245,19 @@ export default function StudentRegisterPage() {
                   <div className="relative">
                     <input
                       type={showPassword ? 'text' : 'password'}
+                      name="password"
                       placeholder="Create a strong password"
                       value={formData.password}
-                      onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent transition-all pr-12"
+                      onChange={handleChange}
+                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent transition-all pr-12 disabled:opacity-50 disabled:cursor-not-allowed"
                       required
+                      disabled={isLoading}
                     />
                     <button
                       type="button"
                       onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 hover:text-black"
+                      className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 hover:text-black disabled:opacity-50"
+                      disabled={isLoading}
                     >
                       {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
                     </button>
@@ -176,7 +269,8 @@ export default function StudentRegisterPage() {
                   <button
                     type="button"
                     onClick={() => setStep(1)}
-                    className="flex-1 border border-gray-300 text-gray-900 py-3 rounded-lg font-medium hover:bg-gray-50 transition-colors"
+                    disabled={isLoading}
+                    className="flex-1 border border-gray-300 text-gray-900 py-3 rounded-lg font-medium hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     Back
                   </button>
