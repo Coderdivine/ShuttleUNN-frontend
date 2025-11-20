@@ -14,6 +14,7 @@ import { useAppState } from '@/lib/AppContext';
 import { Notification, useNotification } from '@/components/Notification';
 import paymentService, { Bank } from '@/lib/api/paymentService';
 import routeService, { RouteResponse } from '@/lib/api/routeService';
+// driverService usage replaced by assignRoutes from context
 
 const paymentMethodIcons = {
   card: Wallet,
@@ -25,7 +26,7 @@ const paymentMethodIcons = {
 function DriverDashboardContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { user, userType, trips: appTrips, stats, isLoading, error, isHydrated, getTrips, clearError, logout, updateProfile, loadUserData } = useAppState();
+  const { user, userType, trips: appTrips, stats, isLoading, error, isHydrated, getTrips, clearError, logout, updateProfile, loadUserData, assignRoutes } = useAppState();
   const { notification, showNotification, clearNotification } = useNotification();
   const [showSidebar, setShowSidebar] = useState(false);
   const [selectedTransaction, setSelectedTransaction] = useState<any>(null);
@@ -52,6 +53,11 @@ function DriverDashboardContent() {
   const [accountVerified, setAccountVerified] = useState(false);
   const [routes, setRoutes] = useState<RouteResponse[]>([]);
   const [loadingRoutes, setLoadingRoutes] = useState(false);
+  // derive selected route name for display
+  const selectedRoute = Array.isArray(routes)
+    ? routes.find(r => ((r as any)._id || r.route_id) === profileFormData.assignedRoute)
+    : undefined;
+  const selectedRouteName = selectedRoute ? selectedRoute.routeName : '';
 
   // Check for editProfile query param
   useEffect(() => {
@@ -64,13 +70,18 @@ function DriverDashboardContent() {
   // Load profile data into form
   useEffect(() => {
     if (user) {
+      console.log('User data:', user);
+      console.log('VehicleInfo:', user.vehicleInfo);
+      console.log('Plate number:', (user.vehicleInfo as any)?.plateNumber);
+      console.log('Assigned route:', user.assignedRoute);
+      
       setProfileFormData({
         username: user.username || '',
         firstName: user.firstName || '',
         lastName: user.lastName || '',
         phone: user.phone || '',
-        plateNumber: (user.vehicleInfo as any)?.plateNumber || '',
-        assignedRoute: (user.vehicleInfo as any)?.assignedRoute || '',
+        plateNumber: (user.vehicleInfo as any)?.plateNumber || (user.vehicleInfo as any)?.registrationNumber || '',
+        assignedRoute: user.assignedRoute || '',
         bankDetails: {
           accountName: user.bankDetails?.accountName || '',
           accountNumber: user.bankDetails?.accountNumber || '',
@@ -112,9 +123,35 @@ function DriverDashboardContent() {
     try {
       setLoadingRoutes(true);
       const routesData = await routeService.getAllRoutes(100, 0);
-      setRoutes(routesData.routes);
+      // routeService may return either { routes: [...] } or { data: { routes: [...] } }
+      // Use a safe extraction to satisfy TypeScript and runtime differences
+      // Cast to any for flexible access (keeps TypeScript happy here)
+      const anyResp = routesData as any;
+      const realRoutes: any[] = anyResp?.routes ?? anyResp?.data?.routes ?? [];
+      console.log('Routes loaded:', routesData);
+      console.log('Routes array:', realRoutes);
+      console.log('Routes is array?', Array.isArray(realRoutes));
+      setRoutes(realRoutes);
+
+      // Normalize profileFormData.assignedRoute to use the backend's route id (MongoDB _id)
+      if (profileFormData.assignedRoute) {
+        const match = realRoutes.find((r: any) =>
+          (r as any)._id === profileFormData.assignedRoute ||
+          r.route_id === profileFormData.assignedRoute ||
+          r.routeName === profileFormData.assignedRoute ||
+          r.routeCode === profileFormData.assignedRoute
+        );
+        if (match) {
+          const newAssigned = (match as any)._id || match.route_id || profileFormData.assignedRoute;
+          if (newAssigned !== profileFormData.assignedRoute) {
+            setProfileFormData(prev => ({ ...prev, assignedRoute: newAssigned }));
+          }
+        }
+      }
     } catch (error: any) {
+      console.error('Failed to load routes:', error);
       showNotification('error', error.message || 'Failed to load routes');
+      setRoutes([]);
     } finally {
       setLoadingRoutes(false);
     }
@@ -174,6 +211,15 @@ function DriverDashboardContent() {
     }
   }, [user?.id, userType, getTrips]);
 
+  // Load driver stats and profile on mount
+  useEffect(() => {
+    if (user?.id && userType === 'driver' && isHydrated) {
+      loadUserData().catch(err => {
+        console.error('Failed to load driver data:', err);
+      });
+    }
+  }, [user?.id, userType, isHydrated, loadUserData]);
+
   // Show error notifications
   useEffect(() => {
     if (error) {
@@ -212,6 +258,19 @@ function DriverDashboardContent() {
     
     try {
       setIsSubmittingProfile(true);
+
+      // If driver changed assigned route, call the dedicated endpoint
+      if (user && user.id && userType === 'driver' && profileFormData.assignedRoute) {
+        try {
+          await assignRoutes([profileFormData.assignedRoute]);
+          showNotification('success', 'Assigned route saved');
+        } catch (assignErr: any) {
+          console.error('Failed to assign route:', assignErr);
+          showNotification('error', assignErr?.response?.data?.message || assignErr?.message || 'Failed to assign route');
+        }
+      }
+
+      // Update other profile fields (vehicleInfo may include plateNumber)
       await updateProfile({
         firstName: profileFormData.firstName,
         lastName: profileFormData.lastName,
@@ -219,7 +278,6 @@ function DriverDashboardContent() {
         phone: profileFormData.phone,
         vehicleInfo: {
           plateNumber: profileFormData.plateNumber || undefined,
-          assignedRoute: profileFormData.assignedRoute || undefined,
         },
         bankDetails: {
           accountName: profileFormData.bankDetails.accountName || undefined,
@@ -228,10 +286,10 @@ function DriverDashboardContent() {
           bankCode: profileFormData.bankDetails.bankCode || undefined,
         },
       });
-      
-      // Reload user data to get updated bank details
+
+      // Reload user data to reflect assigned route and other updates
       await loadUserData();
-      
+
       showNotification('success', 'Profile updated successfully!');
       setIsSubmittingProfile(false);
       setShowProfileModal(false);
@@ -253,11 +311,68 @@ function DriverDashboardContent() {
     setShowDetailModal(true);
   };
 
+  // Safe trips array to prevent undefined errors
+  const safeTrips = Array.isArray(appTrips) ? appTrips : [];
+
+  // Helpers to normalize and display payment methods and related info
+  const normalizePaymentMethod = (trip: any) => {
+    const raw = (trip && (trip.paymentMethod || trip.payment_method || trip.paymentType || trip.method || trip.payment)) || '';
+    const norm = String(raw).toLowerCase();
+    if (norm.includes('qr')) return 'qrcode';
+    if (norm.includes('card')) return 'card';
+    if (norm.includes('phone') || norm.includes('mobile')) return 'phone';
+    if (norm.includes('transfer')) return 'transfer';
+    if (norm.includes('booking')) return 'booking';
+    if (norm === '') return 'wallet';
+    return norm;
+  };
+
+  const paymentLabel = (trip: any) => {
+    const m = normalizePaymentMethod(trip);
+    switch (m) {
+      case 'qrcode': return 'QR code';
+      case 'card': return 'Card';
+      case 'phone': return 'Phone';
+      case 'transfer': return 'Transfer';
+      case 'booking': return 'Booking';
+      case 'wallet': return 'Wallet';
+      default: return m.charAt(0).toUpperCase() + m.slice(1);
+    }
+  };
+
+  const paymentIconFor = (trip: any) => {
+    const key = normalizePaymentMethod(trip) as keyof typeof paymentMethodIcons;
+    // Extend mapping for booking -> CheckCircle2 if not present
+    if (key === 'booking') return CheckCircle2;
+    return (paymentMethodIcons as any)[key] || Wallet;
+  };
+
+  const studentNameFor = (trip: any) => {
+    if (trip.student_id && typeof trip.student_id === 'object') {
+      return `${trip.student_id.firstName || ''} ${trip.student_id.lastName || ''}`.trim() || 'Student';
+    }
+    if (trip.student && typeof trip.student === 'object') {
+      return `${trip.student.firstName || ''} ${trip.student.lastName || ''}`.trim() || 'Student';
+    }
+    if (trip.studentName) return trip.studentName;
+    if (trip.passengerName) return trip.passengerName;
+    return 'Student';
+  };
+
+  const tripRouteLabel = (trip: any) => {
+    if (trip.routeName) return `${trip.routeName}`;
+    if (trip.route && trip.route.routeName) return `${trip.route.routeName}`;
+    // fallback to pickup → dropoff
+    return `${trip.pickupStop?.stopName || 'N/A'} → ${trip.dropoffStop?.stopName || 'N/A'}`;
+  };
+
+  const rowKeyFor = (trip: any, idx: number) => trip.booking_id || trip._id || trip.id || `${trip.student_id || 'r'}-${idx}`;
+
   // Calculate today's trips and earnings
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   
-  const todayTrips = appTrips.filter(trip => {
+  const todayTrips = safeTrips.filter(trip => {
     const tripDate = new Date(trip.createdAt);
     tripDate.setHours(0, 0, 0, 0);
     return tripDate.getTime() === today.getTime();
@@ -270,7 +385,7 @@ function DriverDashboardContent() {
   sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
   sevenDaysAgo.setHours(0, 0, 0, 0);
 
-  const weeklyTrips = appTrips.filter(trip => {
+  const weeklyTrips = safeTrips.filter(trip => {
     const tripDate = new Date(trip.createdAt);
     return tripDate >= sevenDaysAgo;
   });
@@ -291,7 +406,16 @@ function DriverDashboardContent() {
     ? `${user.firstName[0]}${user.lastName[0]}`
     : 'D';
   const busNumber = (user?.vehicleInfo as any)?.plateNumber || 'N/A';
-  const route = (user?.vehicleInfo as any)?.assignedRoute || 'No route assigned';
+  // Derive a human-friendly route display value.
+  // Priority: selectedRouteName (current selection in the profile modal) ->
+  // lookup from loaded `routes` by Mongo `_id` or `route_id` using user's assigned id ->
+  // fallback to the raw assigned id if present -> 'No route assigned'.
+  const userAssignedId = user?.assignedRoute || (user?.vehicleInfo as any)?.assignedRoute || '';
+  const assignedRouteObj = Array.isArray(routes)
+    ? (routes as any[]).find(r => ((r as any)._id || r.route_id) === userAssignedId)
+    : undefined;
+  const displayRoute = selectedRouteName
+    || (assignedRouteObj ? `${assignedRouteObj.routeName} (${assignedRouteObj.routeCode})` : (userAssignedId ? userAssignedId : 'No route assigned'));
 
   // Show loading screen while hydrating
   if (!isHydrated) {
@@ -433,7 +557,7 @@ function DriverDashboardContent() {
             <h1 className="text-2xl sm:text-3xl font-light mb-1">
               Welcome back
             </h1>
-            <p className="text-gray-600 text-xs sm:text-sm">{busNumber} • {route}</p>
+            <p className="text-gray-600 text-xs sm:text-sm">{busNumber} • {displayRoute}</p>
           </div>
 
           {/* Stats Cards */}
@@ -516,13 +640,6 @@ function DriverDashboardContent() {
                 </div>
               </div>
             )}
-
-            <Link href="/driver/tap">
-              <button className="w-full bg-black text-white px-4 sm:px-6 py-2.5 rounded-lg font-light text-xs uppercase tracking-wider hover:bg-gray-800 transition-all active:scale-[0.98] flex items-center justify-center gap-2">
-                <Clock size={16} />
-                Process Payment
-              </button>
-            </Link>
           </div>
 
           {/* Recent Trips */}
@@ -535,40 +652,44 @@ function DriverDashboardContent() {
                 <div className="text-center py-8 bg-white rounded-lg border border-gray-200">
                   <p className="text-gray-500 text-sm">Loading trips...</p>
                 </div>
-              ) : appTrips.slice(0, 10).length === 0 ? (
+              ) : safeTrips.slice(0, 10).length === 0 ? (
                 <div className="text-center py-8 bg-white rounded-lg border border-gray-200">
                   <p className="text-gray-500 text-sm">No trips yet</p>
                 </div>
               ) : (
                 <div className="space-y-2 max-h-96 overflow-y-auto">
-                  {appTrips.slice(0, 10).map((trip) => {
-                    const PaymentIcon = paymentMethodIcons[trip.paymentMethod as keyof typeof paymentMethodIcons] || Wallet;
+                  {safeTrips.slice(0, 10).map((trip, idx) => {
+                    const PaymentIcon = paymentIconFor(trip);
                     const tripDate = trip.createdAt ? new Date(trip.createdAt).toLocaleDateString() : 'N/A';
                     const tripTime = trip.createdAt ? new Date(trip.createdAt).toLocaleTimeString() : 'N/A';
-                    
+                    const studentName = studentNameFor(trip);
+                    const routeLabel = tripRouteLabel(trip);
+                    const paymentText = paymentLabel(trip);
+                    const key = rowKeyFor(trip, idx);
+
                     return (
                       <button
-                        key={trip.booking_id}
+                        key={key}
                         onClick={() => handleTransactionClick(trip)}
                         className="w-full bg-white rounded-lg border border-gray-200 p-3 hover:border-gray-300 hover:bg-gray-50 transition-all active:bg-gray-100 text-left"
                       >
                         <div className="flex items-start justify-between gap-2 mb-2">
                           <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium truncate">Student Ride</p>
+                            <p className="text-sm font-medium truncate">{studentName}</p>
                             <p className="text-xs text-gray-600 mt-0.5">{tripDate}</p>
                           </div>
                           <p className="text-sm font-bold shrink-0">{formatCurrency(trip.fare || 0)}</p>
                         </div>
                         <div className="flex items-center gap-1 text-xs text-gray-600 mb-1">
                           <MapPin size={12} />
-                          <span className="truncate">{trip.pickupStop?.stopName || 'N/A'} → {trip.dropoffStop?.stopName || 'N/A'}</span>
+                          <span className="truncate">{routeLabel}</span>
                         </div>
                         <div className="flex items-center gap-2 text-xs text-gray-500">
                           <Clock size={12} />
                           <span>{tripTime}</span>
                           <span>•</span>
                           <PaymentIcon size={12} />
-                          <span className="capitalize">{trip.paymentMethod || 'wallet'}</span>
+                          <span className="text-xs">{paymentText}</span>
                         </div>
                       </button>
                     );
@@ -597,26 +718,30 @@ function DriverDashboardContent() {
                           Loading trips...
                         </td>
                       </tr>
-                    ) : appTrips.slice(0, 10).length === 0 ? (
+                    ) : safeTrips.slice(0, 10).length === 0 ? (
                       <tr>
                         <td colSpan={5} className="px-6 py-8 text-center text-sm text-gray-500">
                           No trips yet
                         </td>
                       </tr>
                     ) : (
-                      appTrips.slice(0, 10).map((trip) => {
-                        const PaymentIcon = paymentMethodIcons[trip.paymentMethod as keyof typeof paymentMethodIcons] || Wallet;
+                      safeTrips.slice(0, 10).map((trip, idx) => {
+                        const PaymentIcon = paymentIconFor(trip);
                         const tripDate = trip.createdAt ? new Date(trip.createdAt).toLocaleDateString() : 'N/A';
                         const tripTime = trip.createdAt ? new Date(trip.createdAt).toLocaleTimeString() : 'N/A';
-                        
+                        const studentName = studentNameFor(trip);
+                        const routeLabel = tripRouteLabel(trip);
+                        const paymentText = paymentLabel(trip);
+                        const key = rowKeyFor(trip, idx);
+
                         return (
                           <tr
-                            key={trip.booking_id}
+                            key={key}
                             onClick={() => handleTransactionClick(trip)}
                             className="hover:bg-gray-50 cursor-pointer transition-colors active:bg-gray-100"
                           >
-                            <td className="px-6 py-4 text-sm font-medium">Student</td>
-                            <td className="px-6 py-4 text-sm text-gray-600">{trip.pickupStop?.stopName || 'N/A'} → {trip.dropoffStop?.stopName || 'N/A'}</td>
+                            <td className="px-6 py-4 text-sm font-medium">{studentName}</td>
+                            <td className="px-6 py-4 text-sm text-gray-600">{routeLabel}</td>
                             <td className="px-6 py-4 text-sm">
                               <p>{tripDate}</p>
                               <p className="text-xs text-gray-500">{tripTime}</p>
@@ -624,7 +749,7 @@ function DriverDashboardContent() {
                             <td className="px-6 py-4 text-sm">
                               <div className="flex items-center gap-2">
                                 <PaymentIcon size={14} className="text-gray-600" />
-                                <span className="capitalize text-xs">{trip.paymentMethod || 'wallet'}</span>
+                                <span className="text-xs">{paymentText}</span>
                               </div>
                             </td>
                             <td className="px-6 py-4 text-right text-sm font-bold">{formatCurrency(trip.fare || 0)}</td>
@@ -714,14 +839,28 @@ function DriverDashboardContent() {
             <h3 className="font-medium text-gray-900 mb-1">Vehicle Information</h3>
             <p className="text-xs text-gray-600 mb-4">Update your bus and route details</p>
             <div className="space-y-4">
-              <Input
-                label="Bus/Vehicle Plate Number"
-                type="text"
-                placeholder="e.g., ABC-1234"
-                value={profileFormData.plateNumber}
-                onChange={(e) => setProfileFormData({ ...profileFormData, plateNumber: e.target.value })}
-                disabled={isSubmittingProfile || isLoading}
-              />
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Bus/Vehicle Plate Number
+                </label>
+                <Input
+                  type="text"
+                  placeholder="e.g., ABC-1234"
+                  value={profileFormData.plateNumber}
+                  onChange={(e) => {
+                    const value = e.target.value.toUpperCase();
+                    setProfileFormData({ ...profileFormData, plateNumber: value });
+                  }}
+                  disabled={isSubmittingProfile || isLoading || !!(user?.vehicleInfo as any)?.plateNumber}
+                  className={!!(user?.vehicleInfo as any)?.plateNumber ? "bg-gray-100 cursor-not-allowed" : ""}
+                />
+                {(user?.vehicleInfo as any)?.plateNumber && (
+                  <p className="text-xs text-gray-500 mt-1 flex items-center gap-1">
+                    <span className="inline-block w-1.5 h-1.5 bg-green-500 rounded-full"></span>
+                    Plate number cannot be changed once set
+                  </p>
+                )}
+              </div>
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -731,15 +870,23 @@ function DriverDashboardContent() {
                   value={profileFormData.assignedRoute}
                   onChange={(e) => setProfileFormData({ ...profileFormData, assignedRoute: e.target.value })}
                   disabled={isSubmittingProfile || isLoading || loadingRoutes}
-                  className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:ring-2 focus:ring-black focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 >
                   <option value="">Select a route</option>
-                  {routes.map((route) => (
-                    <option key={route.route_id} value={route.routeName}>
-                      {route.routeName} ({route.routeCode})
-                    </option>
-                  ))}
+                  {Array.isArray(routes) && routes.map((route, idx) => {
+                    // Use MongoDB _id for value/key when available (backend assigns/looks up by ObjectId)
+                    const idValue = (route as any)._id || route.route_id;
+                    const key = idValue || `${route.routeCode}-${idx}`;
+                    return (
+                      <option key={key} value={idValue}>
+                        {route.routeName} ({route.routeCode})
+                      </option>
+                    );
+                  })}
                 </select>
+                {selectedRouteName && (
+                  <p className="text-xs text-gray-600 mt-1">Selected: {selectedRouteName}</p>
+                )}
                 {loadingRoutes && (
                   <p className="text-xs text-gray-500 mt-1">Loading routes...</p>
                 )}

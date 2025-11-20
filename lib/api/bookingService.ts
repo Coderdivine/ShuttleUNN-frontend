@@ -135,6 +135,19 @@ class BookingService {
     });
     return response.data;
   }
+
+  async getDriverBookings(driverId: string, limit: number = 20, skip: number = 0) {
+    const response = await api.get<{
+      bookings: BookingResponse[];
+      total: number;
+      limit: number;
+      skip: number;
+      hasMore: boolean;
+    }>(`/v2/booking/driver/${driverId}/bookings`, {
+      params: { limit, skip },
+    });
+    return response.data;
+  }
 }
 
 export default new BookingService();

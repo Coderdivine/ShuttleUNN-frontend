@@ -9,6 +9,7 @@ export interface RouteStop {
 }
 
 export interface RouteResponse {
+  _id?: string;
   route_id: string;
   routeName: string;
   routeCode: string;

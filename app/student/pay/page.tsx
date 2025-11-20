@@ -33,6 +33,7 @@ function PaymentPageContent() {
   useEffect(() => {
     // Parse payment data from URL
     const dataParam = searchParams?.get('data');
+    
     if (dataParam) {
       try {
         const decoded = JSON.parse(decodeURIComponent(dataParam));

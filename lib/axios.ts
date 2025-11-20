@@ -15,9 +15,18 @@ const api = axios.create({
 // Request interceptor
 api.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem('shuttleunn-token');
+    // Try to get token based on userType (student or driver)
+    const userType = localStorage.getItem('userType');
+    let token = null;
+    
+    if (userType === 'student') {
+      token = localStorage.getItem('shuttleunn-token-student');
+    } else if (userType === 'driver') {
+      token = localStorage.getItem('shuttleunn-token-driver');
+    }
+    
     if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
+      config.headers.Authorization = token.startsWith('Bearer ') ? token : `Bearer ${token}`;
     }
     return config;
   },
@@ -32,11 +41,20 @@ api.interceptors.response.use(
   (error) => {
     if (error.response?.status === 401) {
       const userType = localStorage.getItem('userType');
-      localStorage.removeItem('shuttleunn-token');
-      localStorage.removeItem('appUser');
+      
+      // Clear userType-specific storage
+      if (userType === 'student') {
+        localStorage.removeItem('shuttleunn-token-student');
+        localStorage.removeItem('appUser_student');
+        localStorage.removeItem('isAuthenticated_student');
+        localStorage.removeItem('appStats_student');
+      } else if (userType === 'driver') {
+        localStorage.removeItem('shuttleunn-token-driver');
+        localStorage.removeItem('appUser_driver');
+        localStorage.removeItem('isAuthenticated_driver');
+        localStorage.removeItem('appStats_driver');
+      }
       localStorage.removeItem('userType');
-      localStorage.removeItem('isAuthenticated');
-      localStorage.removeItem('appStats');
       
       // Redirect to appropriate login page based on user type
       if (userType === 'driver') {

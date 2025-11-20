@@ -22,6 +22,7 @@ export interface AppUser {
   department?: string; // Student only
   licenseNumber?: string; // Driver only
   vehicleInfo?: any; // Driver only
+  assignedRoute?: string; // Driver only - route name assigned to driver
   status?: string; // Driver only
   rating?: number; // Driver only
   bankDetails?: {
@@ -70,6 +71,7 @@ interface AppContextType {
   getBookings: (limit?: number, skip?: number) => Promise<void>;
   getTrips: (limit?: number, skip?: number, status?: string) => Promise<void>;
   getRoutes: (limit?: number, skip?: number) => Promise<void>;
+  assignRoutes: (routeIds: string[]) => Promise<any>;
   getShuttles: (limit?: number, skip?: number) => Promise<void>;
   getAvailableShuttles: (limit?: number, skip?: number) => Promise<void>;
   createBooking: (data: any) => Promise<BookingResponse>;
@@ -99,11 +101,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // Load from localStorage on mount
   useEffect(() => {
     console.log('=== HYDRATION DEBUG ===');
-    const savedUser = localStorage.getItem('appUser');
-    const savedUserType = localStorage.getItem('userType') as UserType;
-    const savedStats = localStorage.getItem('appStats');
-    const token = localStorage.getItem('shuttleunn-token');
-    const savedIsAuthenticated = localStorage.getItem('isAuthenticated') === 'true';
+    // Try loading from student storage first
+    let savedUser = localStorage.getItem('appUser_student');
+    let savedUserType: UserType = 'student';
+    let token = localStorage.getItem('shuttleunn-token-student');
+    
+    // If no student data, try driver storage
+    if (!savedUser || !token) {
+      savedUser = localStorage.getItem('appUser_driver');
+      savedUserType = 'driver';
+      token = localStorage.getItem('shuttleunn-token-driver');
+    }
+    
+    const savedStats = localStorage.getItem(`appStats_${savedUserType}`);
+    const savedIsAuthenticated = localStorage.getItem(`isAuthenticated_${savedUserType}`) === 'true';
 
     console.log('Saved user string:', savedUser);
     console.log('Saved userType:', savedUserType);
@@ -124,7 +135,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
         console.log('Hydration successful');
       } catch (err) {
         console.error('Hydration error:', err);
-        localStorage.clear();
+        // Clear only the current user type storage
+        localStorage.removeItem(`appUser_${savedUserType}`);
+        localStorage.removeItem(`userType`);
+        localStorage.removeItem(`shuttleunn-token-${savedUserType}`);
+        localStorage.removeItem(`isAuthenticated_${savedUserType}`);
+        localStorage.removeItem(`appStats_${savedUserType}`);
         setIsAuthenticated(false);
       }
     } else {
@@ -169,10 +185,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setUserType(type);
         setIsAuthenticated(true);
 
-        localStorage.setItem('appUser', JSON.stringify(appUser));
+        localStorage.setItem(`appUser_${type}`, JSON.stringify(appUser));
         localStorage.setItem('userType', type);
-        localStorage.setItem('isAuthenticated', 'true');
-        localStorage.setItem('shuttleunn-token', `Bearer ${(response as any).student_id || (response as any).driver_id}`);
+        localStorage.setItem(`isAuthenticated_${type}`, 'true');
+        localStorage.setItem(`shuttleunn-token-${type}`, `Bearer ${(response as any).student_id || (response as any).driver_id}`);
 
         setIsLoading(false);
       } catch (err: any) {
@@ -227,15 +243,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setUserType(type);
         setIsAuthenticated(true);
 
-        localStorage.setItem('appUser', JSON.stringify(appUser));
+        localStorage.setItem(`appUser_${type}`, JSON.stringify(appUser));
         localStorage.setItem('userType', type);
-        localStorage.setItem('isAuthenticated', 'true');
-        localStorage.setItem('shuttleunn-token', `Bearer ${(response as any).student_id || (response as any).driver_id}`);
+        localStorage.setItem(`isAuthenticated_${type}`, 'true');
+        localStorage.setItem(`shuttleunn-token-${type}`, `Bearer ${(response as any).student_id || (response as any).driver_id}`);
 
         console.log('Saved to localStorage:', {
-          appUser: JSON.parse(localStorage.getItem('appUser') || '{}'),
+          appUser: JSON.parse(localStorage.getItem(`appUser_${type}`) || '{}'),
           userType: localStorage.getItem('userType'),
-          isAuthenticated: localStorage.getItem('isAuthenticated')
+          isAuthenticated: localStorage.getItem(`isAuthenticated_${type}`)
         });
         console.log('=== END LOGIN DEBUG ===');
 
@@ -248,7 +264,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           totalEarnings: (response as any).totalEarnings,
         };
         setStats(initialStats);
-        localStorage.setItem('appStats', JSON.stringify(initialStats));
+        localStorage.setItem(`appStats_${type}`, JSON.stringify(initialStats));
 
         setIsLoading(false);
       } catch (err: any) {
@@ -262,18 +278,27 @@ export function AppProvider({ children }: { children: ReactNode }) {
   );
 
   const logout = useCallback(() => {
+    // Clear userType-specific storage
+    if (userType === 'student') {
+      localStorage.removeItem('appUser_student');
+      localStorage.removeItem('shuttleunn-token-student');
+      localStorage.removeItem('isAuthenticated_student');
+      localStorage.removeItem('appStats_student');
+    } else if (userType === 'driver') {
+      localStorage.removeItem('appUser_driver');
+      localStorage.removeItem('shuttleunn-token-driver');
+      localStorage.removeItem('isAuthenticated_driver');
+      localStorage.removeItem('appStats_driver');
+    }
+    localStorage.removeItem('userType');
+    
     setUser(null);
     setUserType(null);
     setIsAuthenticated(false);
     setStats(null);
     setTransactions([]);
     setBookings([]);
-    localStorage.removeItem('appUser');
-    localStorage.removeItem('userType');
-    localStorage.removeItem('isAuthenticated');
-    localStorage.removeItem('shuttleunn-token');
-    localStorage.removeItem('appStats');
-  }, []);
+  }, [userType]);
 
   const loadUserData = useCallback(async () => {
     if (!user?.id || !userType) return;
@@ -295,7 +320,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           department: profile.department,
         };
         setUser(appUser);
-        localStorage.setItem('appUser', JSON.stringify(appUser));
+        localStorage.setItem(`appUser_${userType}`, JSON.stringify(appUser));
 
         // Load transactions
         const transactionData = await studentService.getTransactionHistory(user.id, 20, 0);
@@ -326,8 +351,34 @@ export function AppProvider({ children }: { children: ReactNode }) {
           vehicleInfo: profile.vehicleInfo,
           bankDetails: profile.bankDetails,
         };
+
+        // Fetch assigned routes (populated) so we can expose a single assignedRoute name/id for UI
+        try {
+          const assigned = await driverService.getAssignedRoutes(user.id);
+          // assigned.assignedRoutes is an array where each item has { route_id: <Route doc> }
+          if (assigned && Array.isArray(assigned.assignedRoutes) && assigned.assignedRoutes.length > 0) {
+            const first = assigned.assignedRoutes[0];
+            const routeDoc = first.route_id;
+            // routeDoc may be populated object or an id string
+            if (routeDoc && typeof routeDoc === 'object') {
+              // Prefer storing the MongoDB _id for operations (fallback to route_id),
+              // but keep a readable value in case only names are available.
+              appUser.assignedRoute = routeDoc._id || routeDoc.route_id || routeDoc.routeName || null;
+            } else if (routeDoc) {
+              // not populated, fallback to route id string
+              appUser.assignedRoute = routeDoc;
+            }
+          } else if (profile.assignedRoute) {
+            // legacy single assignedRoute field
+            appUser.assignedRoute = profile.assignedRoute;
+          }
+        } catch (assignErr) {
+          console.warn('Failed to load assigned routes:', assignErr);
+          if (profile.assignedRoute) appUser.assignedRoute = profile.assignedRoute;
+        }
+
         setUser(appUser);
-        localStorage.setItem('appUser', JSON.stringify(appUser));
+        localStorage.setItem(`appUser_${userType}`, JSON.stringify(appUser));
 
         // Fetch driver stats from backend
         try {
@@ -374,7 +425,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
             bankDetails: response.bankDetails,
           };
           setUser(updated);
-          localStorage.setItem('appUser', JSON.stringify(updated));
+          localStorage.setItem(`appUser_${userType}`, JSON.stringify(updated));
         } else {
           const response = await driverService.updateProfile(user.id, data);
           const updated: AppUser = {
@@ -388,7 +439,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
             bankDetails: response.bankDetails,
           };
           setUser(updated);
-          localStorage.setItem('appUser', JSON.stringify(updated));
+          localStorage.setItem(`appUser_${userType}`, JSON.stringify(updated));
         }
         setIsLoading(false);
       } catch (err: any) {
@@ -400,6 +451,39 @@ export function AppProvider({ children }: { children: ReactNode }) {
     },
     [user, userType]
   );
+
+    const assignRoutes = useCallback(
+      async (routeIds: string[]) => {
+        if (!user?.id || userType !== 'driver') throw new Error('Only drivers can be assigned routes');
+
+        try {
+          setIsLoading(true);
+          const response = await driverService.assignRoutes(user.id, routeIds);
+
+          // response is the updated driver object; set assignedRoute on user to first assigned route id if present
+          const newAssigned =
+            response?.assignedRoutes && response.assignedRoutes.length > 0
+              ? (response.assignedRoutes[0].route_id && (response.assignedRoutes[0].route_id._id || response.assignedRoutes[0].route_id))
+              : null;
+
+          const updated: AppUser = {
+            ...user,
+            vehicleInfo: response.vehicleInfo || user.vehicleInfo,
+            assignedRoute: newAssigned || user.assignedRoute,
+          };
+          setUser(updated);
+          localStorage.setItem(`appUser_${userType}`, JSON.stringify(updated));
+          setIsLoading(false);
+          return response;
+        } catch (err: any) {
+          const errorMsg = err.response?.data?.message || 'Failed to assign routes';
+          setError(errorMsg);
+          setIsLoading(false);
+          throw err;
+        }
+      },
+      [user, userType]
+    );
 
   const changePassword = useCallback(
     async (oldPassword: string, newPassword: string) => {
@@ -476,7 +560,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           walletBalance: result.wallet.walletBalance,
         };
         setUser(updated);
-        localStorage.setItem('appUser', JSON.stringify(updated));
+        localStorage.setItem(`appUser_${userType}`, JSON.stringify(updated));
 
         setIsLoading(false);
         return {
@@ -545,27 +629,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
           const data = await bookingService.getStudentTrips(user.id, status, limit, skip);
           setTrips(data.trips);
         } else if (userType === 'driver') {
-          // Drivers view trips for their assigned shuttle
-          try {
-            // First, get all shuttles and find the one assigned to this driver
-            const shuttlesData = await shuttleService.getAllShuttles(100, 0);
-            const driverShuttle = shuttlesData.shuttles.find(
-              (shuttle: any) => shuttle.assignedDriver === user.id
-            );
-
-            if (driverShuttle) {
-              // Get bookings for this shuttle
-              const data = await bookingService.getShuttleBookings(driverShuttle.shuttle_id, limit, skip);
-              setTrips(data.bookings);
-            } else {
-              // Driver has no assigned shuttle yet
-              setTrips([]);
-            }
-          } catch (shuttleErr) {
-            // If shuttle service fails (e.g., no shuttles in database), just set empty trips
-            console.warn('Failed to load shuttles:', shuttleErr);
-            setTrips([]);
-          }
+          // Drivers view all bookings (shuttle + QR payments)
+          const data = await bookingService.getDriverBookings(user.id, limit, skip);
+          setTrips(data.bookings);
         }
 
         setIsLoading(false);
